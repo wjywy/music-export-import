@@ -196,11 +196,30 @@ export interface AppleStatus {
 }
 
 export interface ApplePushResult {
-  libraryPlaylistId: string;
+  platform: 'apple';
+  playlistId: string;
   name: string;
+  url: string;
   added: number;
   skipped: number;
-  libraryUrl: string;
+  failed: number;
+  warning?: string | null;
+}
+
+export interface AppleImportLink {
+  index: number;
+  from: number;
+  to: number;
+  trackCount: number;
+  url: string;
+  expiresAt: number;
+}
+
+export interface AppleImportLinks {
+  total: number;
+  chunkSize: number;
+  links: AppleImportLink[];
+  note: string;
 }
 
 export interface MergeResult {
@@ -222,7 +241,7 @@ export interface KuwoSessionStatus {
   autoRefreshSeconds: number;
 }
 
-export type TransferTarget = 'qq' | 'netease';
+export type TransferTarget = 'qq' | 'netease' | 'apple';
 export type AccountPlatform = 'netease' | 'qq';
 
 export interface AccountStatus {
@@ -254,4 +273,22 @@ export interface AccountPushResult {
   added: number;
   skipped: number;
   failed: number;
+}
+
+export interface MatchResult {
+  platform: Platform;
+  total: number;
+  matched: number;
+  message: string;
+}
+
+export interface PushResult {
+  platform: TransferTarget;
+  playlistId: string;
+  name: string;
+  url: string;
+  added: number;
+  skipped: number;
+  failed: number;
+  warning?: string | null;
 }

@@ -63,3 +63,37 @@ test('scoreCandidate ranks exact matches above loose covers', () => {
   assert.ok(cover < exact);
   assert.ok(cover < 0.7);
 });
+
+test('Apple scoring rejects live versions and duration outliers', () => {
+  const origin = { title: '晴天', artist: '周杰伦', durationMs: 269_000 };
+  const live = {
+    title: '晴天 (Live)',
+    artist: '周杰伦',
+    durationMs: 269_000,
+  };
+  const longVersion = {
+    title: '晴天',
+    artist: '周杰伦',
+    durationMs: 320_000,
+  };
+
+  assert.equal(scoreCandidate(origin, live, 'apple'), 0);
+  assert.equal(scoreCandidate(origin, longVersion, 'apple'), 0);
+  assert.ok(
+    scoreCandidate(
+      origin,
+      { title: '晴天', artist: '周杰伦', durationMs: 268_000 },
+      'apple',
+    ) > 0.99,
+  );
+});
+
+test('Apple scoring rejects a different artist on the same title', () => {
+  const origin = { title: '晴天', artist: '周杰伦', durationMs: 269_000 };
+  const otherArtist = {
+    title: '晴天',
+    artist: '林俊杰',
+    durationMs: 269_000,
+  };
+  assert.equal(scoreCandidate(origin, otherArtist, 'apple'), 0);
+});

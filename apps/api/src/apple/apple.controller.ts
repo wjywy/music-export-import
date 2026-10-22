@@ -1,16 +1,30 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AppleMusicService } from './apple-music.service';
 import { AppleAuthorizeDto } from './apple.dto';
+import { SoundiizService } from './soundiiz.service';
 
 @Controller('platforms/apple')
 @UseGuards(JwtAuthGuard)
 export class AppleController {
-  constructor(private readonly apple: AppleMusicService) {}
+  constructor(
+    private readonly apple: AppleMusicService,
+    private readonly soundiiz: SoundiizService,
+  ) {}
 
   @Get('config')
+  @Header('Cache-Control', 'no-store, max-age=0')
   config(@CurrentUser() user: AuthUser) {
     return this.apple.config(user.sub);
   }
@@ -28,5 +42,10 @@ export class AppleController {
   @Post('playlists/:id/push')
   push(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.apple.pushPlaylist(user.sub, id);
+  }
+
+  @Post('playlists/:id/soundiiz')
+  soundiizLinks(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.soundiiz.createLinks(user.sub, id);
   }
 }

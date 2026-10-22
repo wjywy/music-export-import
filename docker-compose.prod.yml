@@ -40,6 +40,11 @@ services:
       WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:8080}
       NETEASE_COOKIE: ${NETEASE_COOKIE:-}
       QQ_COOKIE: ${QQ_COOKIE:-}
+      APPLE_MUSIC_TOKEN: ${APPLE_MUSIC_TOKEN:-}
+      APPLE_MUSIC_TEAM_ID: ${APPLE_MUSIC_TEAM_ID:-}
+      APPLE_MUSIC_KEY_ID: ${APPLE_MUSIC_KEY_ID:-}
+      APPLE_MUSIC_PRIVATE_KEY: ${APPLE_MUSIC_PRIVATE_KEY:-}
+      APPLE_MUSIC_STOREFRONT: ${APPLE_MUSIC_STOREFRONT:-cn}
     command: sh -c "node dist/database/migrate.js up && node dist/main.js"
     depends_on:
       mysql:

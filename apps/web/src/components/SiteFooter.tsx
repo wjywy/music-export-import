@@ -12,7 +12,7 @@ export function SiteFooter() {
             <FerryMark size={24} />
             <span className="brand-cn">渡口</span>
           </Link>
-          <p>在 QQ 音乐和网易云音乐之间迁移歌单。</p>
+          <p>把 QQ 音乐或网易云音乐的歌单迁往另一个平台，支持 Apple Music。</p>
           <div className="footer-links">
             <Link to="/app/import">导入</Link>
             <span aria-hidden="true">·</span>

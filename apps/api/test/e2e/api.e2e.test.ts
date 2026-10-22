@@ -295,3 +295,58 @@ test('exposes Apple Music status without leaking a token when unconfigured', asy
     assert.equal(res.body.developerToken, undefined);
   }
 });
+
+const appleConfigured = Boolean(
+  process.env.APPLE_MUSIC_TOKEN?.trim() ||
+    (process.env.APPLE_MUSIC_TEAM_ID?.trim() &&
+      process.env.APPLE_MUSIC_KEY_ID?.trim() &&
+      (process.env.APPLE_MUSIC_PRIVATE_KEY?.trim() ||
+        process.env.APPLE_MUSIC_PRIVATE_KEY_PATH?.trim())),
+);
+
+test(
+  'rejects Apple authorization when no developer token is configured',
+  { skip: appleConfigured },
+  async () => {
+    const res = await request(http)
+      .post('/api/platforms/apple/authorize')
+      .set(auth(token))
+      .send({ musicUserToken: 'x'.repeat(40) })
+      .expect(400);
+    assert.match(res.body.message, /未配置/);
+  },
+);
+
+test(
+  'rejects Apple push when no developer token is configured',
+  { skip: appleConfigured },
+  async () => {
+    const res = await request(http)
+      .post(`/api/platforms/apple/playlists/${playlistId}/push`)
+      .set(auth(token))
+      .expect(400);
+    assert.match(res.body.message, /未配置/);
+  },
+);
+
+test(
+  'rejects Apple matching when no developer token is configured',
+  { skip: appleConfigured },
+  async () => {
+    const res = await request(http)
+      .post(`/api/playlists/${playlistId}/match`)
+      .set(auth(token))
+      .send({ platform: 'apple' })
+      .expect(401);
+    assert.match(res.body.message, /Apple Music|令牌/);
+  },
+);
+
+test('rejects Soundiiz link generation for an unknown playlist', async () => {
+  await request(http)
+    .post(
+      '/api/platforms/apple/playlists/00000000-0000-4000-8000-000000000000/soundiiz',
+    )
+    .set(auth(token))
+    .expect(404);
+});

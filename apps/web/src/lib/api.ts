@@ -1,13 +1,18 @@
 import type {
   AccountPlatform,
-  AccountPushResult,
   AccountQr,
   AccountQrStatus,
   AccountStatus,
+  AppleImportLinks,
+  ApplePushResult,
+  AppleStatus,
   AuthResult,
   ImportJob,
+  MatchResult,
+  Platform,
   PlaylistDetail,
   PlaylistSummary,
+  PushResult,
   User,
 } from './types';
 
@@ -138,9 +143,42 @@ export const api = {
   disconnectAccount: (platform: AccountPlatform) =>
     request<{ ok: boolean }>(`/accounts/${platform}`, { method: 'DELETE' }),
   pushPlaylist: (playlistId: string, platform: AccountPlatform) =>
-    request<AccountPushResult>(`/playlists/${playlistId}/push`, {
+    request<PushResult>(`/playlists/${playlistId}/push`, {
       method: 'POST',
       body: jsonBody({ platform }),
       timeoutMs: 240_000,
     }),
+
+  matchPlaylist: (playlistId: string, platform: Platform) =>
+    request<MatchResult>(`/playlists/${playlistId}/match`, {
+      method: 'POST',
+      body: jsonBody({ platform }),
+      timeoutMs: 240_000,
+    }),
+
+  appleConfig: () =>
+    request<AppleStatus>('/platforms/apple/config', { timeoutMs: 20_000 }),
+  appleAuthorize: (musicUserToken: string) =>
+    request<AppleStatus>('/platforms/apple/authorize', {
+      method: 'POST',
+      body: jsonBody({ musicUserToken }),
+      timeoutMs: 30_000,
+    }),
+  appleDisconnect: () =>
+    request<{ ok: boolean }>('/platforms/apple/authorize', {
+      method: 'DELETE',
+    }),
+  applePushPlaylist: (playlistId: string) =>
+    request<ApplePushResult>(`/platforms/apple/playlists/${playlistId}/push`, {
+      method: 'POST',
+      timeoutMs: 300_000,
+    }),
+  appleImportLinks: (playlistId: string) =>
+    request<AppleImportLinks>(
+      `/platforms/apple/playlists/${playlistId}/soundiiz`,
+      {
+        method: 'POST',
+        timeoutMs: 180_000,
+      },
+    ),
 };

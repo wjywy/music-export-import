@@ -17,6 +17,33 @@ export interface MatchOutcome {
 
 const ARTIST_SEPARATORS = /\s*(?:\/|、|&|,|，|feat\.?|ft\.?|with)\s*/gi;
 
+const VERSION_RULES: { tag: string; pattern: RegExp }[] = [
+  { tag: 'live', pattern: /\blive\b|现场/i },
+  { tag: 'remix', pattern: /\bremix\b|\bdj\s*版/i },
+  { tag: 'instrumental', pattern: /\binstrumental\b|伴奏|纯音乐/i },
+  { tag: 'acoustic', pattern: /\bacoustic\b|不插电/i },
+  { tag: 'cover', pattern: /\bcover\b|翻唱/i },
+  { tag: 'karaoke', pattern: /\bkaraoke\b/i },
+  { tag: 'demo', pattern: /\bdemo\b/i },
+];
+
+function versionTags(value: string): Set<string> {
+  const tags = new Set<string>();
+  for (const rule of VERSION_RULES) {
+    if (rule.pattern.test(value)) tags.add(rule.tag);
+  }
+  return tags;
+}
+
+function hasVersionMismatch(a: string, b: string): boolean {
+  const left = versionTags(a);
+  const right = versionTags(b);
+  for (const tag of new Set([...left, ...right])) {
+    if (left.has(tag) !== right.has(tag)) return true;
+  }
+  return false;
+}
+
 export function normalize(value: string): string {
   return value
     .normalize('NFKC')
@@ -69,10 +96,29 @@ function durationScore(a?: number | null, b?: number | null): number {
   return 1 - (diff - 3000) / 12000;
 }
 
-export function scoreCandidate(item: MatchInput, hit: SearchHit): number {
+export function scoreCandidate(
+  item: MatchInput,
+  hit: SearchHit,
+  platform?: Platform,
+): number {
   const title = diceCoefficient(normalize(item.title), normalize(hit.title));
   const artist = artistScore(item.artist, hit.artist);
   const duration = durationScore(item.durationMs, hit.durationMs);
+
+  if (platform === 'apple') {
+    if (
+      item.durationMs &&
+      hit.durationMs &&
+      Math.abs(item.durationMs - hit.durationMs) > 15_000
+    ) {
+      return 0;
+    }
+    if (hasVersionMismatch(item.title, hit.title)) return 0;
+    if (item.artist.trim() && (hit.artist ?? '').trim() && artist < 0.5) {
+      return 0;
+    }
+  }
+
   return Number((title * 0.6 + artist * 0.3 + duration * 0.1).toFixed(4));
 }
 
@@ -92,7 +138,7 @@ export class MatchingService {
     for (const query of queries) {
       const hits = await adapter.search(query, 8);
       for (const hit of hits) {
-        const score = scoreCandidate(item, hit);
+        const score = scoreCandidate(item, hit, platform);
         if (score > bestScore) {
           best = hit;
           bestScore = score;

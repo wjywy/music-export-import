@@ -30,13 +30,13 @@ export function Landing() {
             ) : null}
           </div>
           <div className="chips">
-            <span>只支持 QQ / 网易云</span>
-            <span>扫码一次</span>
+            <span>来源只支持 QQ / 网易云</span>
+            <span>可迁往 Apple Music</span>
             <span>自动匹配并写入</span>
           </div>
         </div>
 
-        <div className="platform-cards" aria-label="支持的两个平台">
+        <div className="platform-cards" aria-label="支持的来源平台">
           {PLATFORMS.map((platform) => (
             <div className="platform-card" key={platform}>
               <div className="platform-card-head">
@@ -75,15 +75,19 @@ export function Landing() {
           <div className="step">
             <span className="step-no">02</span>
             <div>
-              <h3 className="step-name">扫码一次</h3>
-              <p className="step-text">用目标平台的 App 扫码授权，登录态加密保存，可随时断开。</p>
+              <h3 className="step-name">连接一次</h3>
+              <p className="step-text">
+                QQ / 网易云扫码，或 Apple Music 弹窗授权；登录态加密保存，可随时断开。
+              </p>
             </div>
           </div>
           <div className="step">
             <span className="step-no">03</span>
             <div>
-              <h3 className="step-name">自动写入</h3>
-              <p className="step-text">渡口逐首匹配，在目标账号里新建一张歌单，并回读确认。</p>
+              <h3 className="step-name">匹配并写入</h3>
+              <p className="step-text">
+                渡口逐首匹配，在目标账号里新建一张歌单；Apple Music 先看匹配结果再写。
+              </p>
             </div>
           </div>
         </div>

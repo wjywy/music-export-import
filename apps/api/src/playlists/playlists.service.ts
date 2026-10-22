@@ -439,9 +439,13 @@ export class PlaylistsService {
     platform: Platform,
     threshold = 0.7,
   ): Promise<{ platform: Platform; total: number; matched: number; message: string }> {
-    if (platform !== 'netease' && platform !== 'qq') {
-      throw new BadRequestException('目前只支持 QQ 音乐和网易云音乐。');
+    if (platform !== 'netease' && platform !== 'qq' && platform !== 'apple') {
+      throw new BadRequestException(
+        '目前只支持 QQ 音乐、网易云音乐和 Apple Music。',
+      );
     }
+    const effectiveThreshold =
+      platform === 'apple' ? Math.max(threshold, 0.72) : threshold;
     await this.getEntity(id, userId);
     await this.matcher.probe(platform);
 
@@ -476,7 +480,7 @@ export class PlaylistsService {
         const result = await this.matcher.best(
           platform,
           { title: item.title, artist: item.artist, durationMs: item.durationMs },
-          threshold,
+          effectiveThreshold,
         );
         return { item, current: current ?? null, alias: null, result, preserved: false, error: null };
       } catch (error) {

@@ -7,6 +7,9 @@ import { CredentialCipher } from '../platforms/credential-cipher.service';
 import { PlaylistsModule } from '../playlists/playlists.module';
 import { AppleController } from './apple.controller';
 import { AppleMusicService } from './apple-music.service';
+import { AppleTokenService } from './apple-token.service';
+import { SoundiizHttpClient } from './soundiiz-http.client';
+import { SoundiizService } from './soundiiz.service';
 
 @Module({
   imports: [
@@ -16,6 +19,12 @@ import { AppleMusicService } from './apple-music.service';
     AuthModule,
   ],
   controllers: [AppleController],
-  providers: [AppleMusicService, CredentialCipher],
+  providers: [
+    AppleMusicService,
+    AppleTokenService,
+    SoundiizHttpClient,
+    SoundiizService,
+    CredentialCipher,
+  ],
 })
 export class AppleModule {}

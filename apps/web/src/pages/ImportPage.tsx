@@ -185,7 +185,7 @@ export function ImportPage() {
           <span className="eyebrow">导入</span>
           <h1 className="page-title">粘贴一张歌单。</h1>
           <div className="page-meta">
-            <span>只支持 QQ 音乐 / 网易云音乐的公开歌单链接</span>
+            <span>来源只支持 QQ 音乐 / 网易云音乐的公开歌单链接</span>
           </div>
         </div>
       </div>
@@ -207,7 +207,7 @@ export function ImportPage() {
                   {PLATFORM_INFO[detected].monogram} · {PLATFORM_INFO[detected].name}
                 </span>
               ) : url ? (
-                <span className="tag tag--sand">只支持 QQ / 网易云</span>
+                <span className="tag tag--sand">来源只支持 QQ / 网易云</span>
               ) : null}
             </div>
             <div className="url-field">

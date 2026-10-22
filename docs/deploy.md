@@ -49,7 +49,18 @@ WEB_BASE_URL=https://a2a-platform.com/tool/music
 WEB_PORT=8090
 WEB_BIND=127.0.0.1
 NPM_REGISTRY=https://registry.npmmirror.com
+
+# Apple Music 站内直写（可选）：自动签发开发者 token（推荐）
+# 不配置 APPLE_MUSIC_* 时，前端使用 Soundiiz 免费导入
+APPLE_MUSIC_STOREFRONT=cn
+APPLE_MUSIC_TEAM_ID=
+APPLE_MUSIC_KEY_ID=
+# .p8 内容；换行写成 \n
+APPLE_MUSIC_PRIVATE_KEY=
+# 也可以改为手工 JWT：APPLE_MUSIC_TOKEN=
 ```
+
+Apple Music 的 `APPLE_MUSIC_*` 变量会传给 API 容器；`APPLE_MUSIC_PRIVATE_KEY` 里的 `$` 等字符不要做 shell 展开。配置后用 `GET /api/platforms/apple/config` 确认 `configured: true`。
 
 启动：
 
