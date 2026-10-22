@@ -1,0 +1,15 @@
+{
+  "name": "dukou",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @dukou/api --filter @dukou/web dev",
+    "dev:api": "pnpm --filter @dukou/api dev",
+    "dev:web": "pnpm --filter @dukou/web dev",
+    "build": "pnpm --filter @dukou/api build && pnpm --filter @dukou/web build",
+    "start:api": "pnpm --filter @dukou/api start",
+    "seed": "pnpm --filter @dukou/api seed",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
