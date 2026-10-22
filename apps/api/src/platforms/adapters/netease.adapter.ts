@@ -15,7 +15,7 @@ interface NeteaseSong {
   name?: string;
   ar?: { name?: string }[];
   artists?: { name?: string }[];
-  al?: { name?: string; picUrl?: string };
+  al?: { name?: string; picUrl?: string } | string;
   album?: { name?: string; picUrl?: string };
   dt?: number;
   duration?: number;
@@ -43,6 +43,19 @@ interface NeteaseSearch {
   code?: number;
   result?: { songs?: NeteaseSong[] };
 }
+
+interface NeteaseApiModule {
+  cloudsearch: (params: {
+    keywords: string;
+    type: number;
+    limit: number;
+    cookie?: string;
+  }) => Promise<{ status: number; body: NeteaseSearch }>;
+}
+
+// NeteaseCloudMusicApi is a CommonJS package without TypeScript declarations.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const neteaseApi = require('NeteaseCloudMusicApi') as NeteaseApiModule;
 
 @Injectable()
 export class NeteaseAdapter implements PlatformAdapter {
@@ -115,12 +128,17 @@ export class NeteaseAdapter implements PlatformAdapter {
       creator: detail.playlist.creator?.nickname ?? null,
       tracks: songs.map((song): RemoteTrack => {
         const artists = song.ar ?? song.artists ?? [];
+        const albumObject = typeof song.al === 'object' ? song.al : null;
+        const albumName =
+          typeof song.al === 'string'
+            ? song.al
+            : song.al?.name ?? song.album?.name ?? null;
         return {
           title: song.name ?? '未知曲目',
           artist: artists.map((a) => a.name).filter(Boolean).join(' / '),
-          album: song.al?.name ?? song.album?.name ?? null,
+          album: albumName,
           durationMs: song.dt ?? song.duration ?? null,
-          coverUrl: song.al?.picUrl ?? song.album?.picUrl ?? null,
+          coverUrl: albumObject?.picUrl ?? song.album?.picUrl ?? null,
           sourceUrl: song.id ? `https://music.163.com/#/song?id=${song.id}` : null,
           sourceId: song.id ? String(song.id) : null,
         };
@@ -129,19 +147,33 @@ export class NeteaseAdapter implements PlatformAdapter {
   }
 
   async search(query: string, limit: number): Promise<SearchHit[]> {
-    const response = await fetchJson<NeteaseSearch>(
-      `https://music.163.com/api/search/get/web?s=${encodeURIComponent(query)}&type=1&offset=0&limit=${limit}`,
-      { headers: { referer: 'https://music.163.com/' } },
-    );
-    const songs = response.result?.songs ?? [];
+    const cookie = process.env.NETEASE_COOKIE?.trim() || undefined;
+    const response = await neteaseApi.cloudsearch({
+      keywords: query,
+      type: 1,
+      limit,
+      cookie,
+    });
+    if (response.status !== 200 || response.body?.code === 405) {
+      throw new PlatformError(
+        'RATE_LIMITED',
+        '网易云音乐搜索被限流，请稍后重试。',
+      );
+    }
+    const songs = response.body?.result?.songs ?? [];
     return songs.map((song) => {
       const artists = song.ar ?? song.artists ?? [];
+      const albumObject = typeof song.al === 'object' ? song.al : null;
+      const albumName =
+        typeof song.al === 'string'
+          ? song.al
+          : song.al?.name ?? song.album?.name ?? null;
       return {
         title: song.name ?? '',
         artist: artists.map((a) => a.name).filter(Boolean).join(' / '),
-        album: song.al?.name ?? song.album?.name ?? null,
+        album: albumName,
         durationMs: song.dt ?? song.duration ?? null,
-        coverUrl: song.al?.picUrl ?? song.album?.picUrl ?? null,
+        coverUrl: albumObject?.picUrl ?? song.album?.picUrl ?? null,
         sourceUrl: song.id ? `https://music.163.com/#/song?id=${song.id}` : null,
         sourceId: song.id ? String(song.id) : null,
       };
