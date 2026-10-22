@@ -5,7 +5,7 @@ import { ArrowRight, Upload } from '../components/Icons';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { detectPlatform, PLATFORM_INFO } from '../lib/platforms';
-import type { ImportJob } from '../lib/types';
+import type { AccountQr, AccountQrStatus, ImportJob } from '../lib/types';
 
 const STATUS_LABEL: Record<ImportJob['status'], string> = {
   queued: '排队中',
@@ -26,10 +26,23 @@ export function ImportPage() {
   const queryClient = useQueryClient();
   const [url, setUrl] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [forcePartial, setForcePartial] = useState(false);
+  const [qr, setQr] = useState<AccountQr | null>(null);
+  const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle'>('idle');
+  const [connectError, setConnectError] = useState<string | null>(null);
   const detected = detectPlatform(url);
 
+  const accounts = useQuery({
+    queryKey: ['accounts'],
+    queryFn: api.accounts,
+    staleTime: 15_000,
+    retry: false,
+  });
+  const netease = accounts.data?.accounts.find((entry) => entry.platform === 'netease');
+
   const create = useMutation({
-    mutationFn: () => api.createImport(url.trim()),
+    mutationFn: (targetUrl: string) => api.createImport(targetUrl),
     onSuccess: (job) => {
       setJobId(job.id);
       toast('链接已识别，正在读取。');
@@ -38,6 +51,93 @@ export function ImportPage() {
       toast(error instanceof Error ? error.message : '导入失败，请重试。', 'error');
     },
   });
+
+  useEffect(() => {
+    setConnectOpen(false);
+    setQr(null);
+    setQrState('idle');
+    setConnectError(null);
+    setForcePartial(false);
+  }, [url]);
+
+  async function startQr() {
+    setConnectError(null);
+    setQrState('waiting');
+    try {
+      setQr(await api.startAccountQr('netease'));
+    } catch (error) {
+      setQr(null);
+      setQrState('idle');
+      setConnectError(error instanceof Error ? error.message : '生成二维码失败。');
+    }
+  }
+
+  useEffect(() => {
+    if (!connectOpen || !qr) return;
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const tick = async () => {
+      try {
+        const status = await api.checkAccountQr('netease', qr.key);
+        if (cancelled) return;
+        if (status.status === 'authorized') {
+          setQr(null);
+          setQrState('authorized');
+          setConnectOpen(false);
+          setForcePartial(false);
+          await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          create.mutate(url.trim());
+          return;
+        }
+        if (status.status === 'expired') {
+          setQrState('expired');
+          setConnectError(status.message ?? '二维码已过期。');
+          return;
+        }
+        setQrState(status.status);
+        timer = window.setTimeout(tick, 2000);
+      } catch (error) {
+        if (cancelled) return;
+        setQrState('expired');
+        setConnectError(error instanceof Error ? error.message : '检查扫码状态失败。');
+      }
+    };
+
+    timer = window.setTimeout(tick, 1500);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectOpen, qr, url, queryClient]);
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const value = url.trim();
+    if (!value) return;
+    if (
+      detected === 'netease' &&
+      netease &&
+      !netease.connected &&
+      !forcePartial
+    ) {
+      setConnectOpen(true);
+      setConnectError(null);
+      if (!qr) void startQr();
+      return;
+    }
+    setJobId(null);
+    create.mutate(value);
+  }
+
+  function importPartial() {
+    setForcePartial(true);
+    setConnectOpen(false);
+    setQr(null);
+    setJobId(null);
+    create.mutate(url.trim());
+  }
 
   const job = useQuery({
     queryKey: ['job', jobId],
@@ -55,13 +155,6 @@ export function ImportPage() {
       void queryClient.invalidateQueries({ queryKey: ['playlists'] });
     }
   }, [job.data?.status, queryClient]);
-
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!url.trim()) return;
-    setJobId(null);
-    create.mutate();
-  }
 
   function reset() {
     setJobId(null);
@@ -141,6 +234,48 @@ export function ImportPage() {
         </form>
       </div>
 
+      {connectOpen && detected === 'netease' && !netease?.connected ? (
+        <div className="import-connect">
+          <div className="transfer-account-head">
+            <h3>先连接网易云</h3>
+            <span className="tag">未连接</span>
+          </div>
+          <p className="field-hint">
+            未连接时网易云只返回前 10 首；扫码后会自动读取完整歌单。
+          </p>
+          {qr ? (
+            <div className="account-qr">
+              <img src={qr.image} alt="网易云登录二维码" />
+              <p>
+                {qrState === 'scanned'
+                  ? '已扫码，请在手机上确认。'
+                  : qrState === 'expired'
+                    ? '二维码已过期。'
+                    : '打开网易云音乐 App 扫一扫，确认登录。'}
+              </p>
+              {qrState === 'expired' ? (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void startQr()}>
+                  重新生成
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={qrState === 'waiting'}
+              onClick={() => void startQr()}
+            >
+              {qrState === 'waiting' ? '正在生成二维码…' : '扫码连接网易云'}
+            </button>
+          )}
+          {connectError ? <div className="form-error">{connectError}</div> : null}
+          <button type="button" className="btn btn-quiet btn-sm" onClick={importPartial}>
+            仍然只导入前 10 首
+          </button>
+        </div>
+      ) : null}
+
       {jobId || create.isPending ? (
         <div className="job">
           <div className="job-head">
@@ -187,7 +322,7 @@ export function ImportPage() {
           {activeJob?.status === 'failed' ? (
             <div className="job-foot">
               <span className="field-hint">检查链接是否公开，或稍后重试。</span>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => create.mutate()}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => create.mutate(url.trim())}>
                 重试
               </button>
             </div>

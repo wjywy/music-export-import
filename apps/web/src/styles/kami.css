@@ -1439,6 +1439,21 @@ img {
   padding: 32px;
 }
 
+.import-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 20px;
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.import-connect .account-qr {
+  align-items: flex-start;
+}
+
 .import-form {
   display: grid;
   gap: 24px;
