@@ -10,8 +10,8 @@ https://a2a-platform.com/tool/music/
 
 ```text
 浏览器
-  └─ https://a2a-platform.com/tool/music/     （现有站点 nginx，已有证书）
-       └─ 127.0.0.1:8080                      （本项目的 web 容器）
+  └─ https://a2a-platform.com/tool/music/     （现有站点 Caddy，已有证书）
+       └─ 127.0.0.1:8090                      （本项目的 web 容器）
             ├─ /assets/*                      前端静态文件
             └─ /api/*                         转发到 api 容器
                  └─ MySQL（仅容器网络）
@@ -30,8 +30,8 @@ https://a2a-platform.com/tool/music/
 ## 二、服务器启动
 
 ```bash
-git clone git@github.com:wjywy/music-export-import.git /srv/dukou
-cd /srv/dukou
+git clone git@github.com:wjywy/music-export-import.git /home/admin/dukou
+cd /home/admin/dukou
 cp .env.production.example .env.production
 ```
 
@@ -46,7 +46,7 @@ CREDENTIALS_SECRET=openssl rand -base64 32
 VITE_BASE=/tool/music/
 WEB_ORIGIN=https://a2a-platform.com
 WEB_BASE_URL=https://a2a-platform.com/tool/music
-WEB_PORT=8080
+WEB_PORT=8090
 WEB_BIND=127.0.0.1
 NPM_REGISTRY=https://registry.npmmirror.com
 ```
@@ -54,29 +54,49 @@ NPM_REGISTRY=https://registry.npmmirror.com
 启动：
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+sudo docker compose -p dukou -f docker-compose.prod.yml --env-file .env.production up -d --build
 ```
 
 确认容器：
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production ps
-curl http://127.0.0.1:8080/api/health
+sudo docker compose -p dukou -f docker-compose.prod.yml --env-file .env.production ps
+curl http://127.0.0.1:8090/api/health
 ```
 
-## 三、现有站点 nginx 加两个 location
+## 三、现有站点反向代理
+
+### 当前服务器：Caddy
+
+配置文件在 `/home/admin/caddy/Caddyfile`，是挂进 `caddy` 容器的。在 `a2a-platform.com { ... }` 里、默认 `handle` 之前加：
+
+```caddyfile
+  redir /tool/music /tool/music/ 308
+
+  handle_path /tool/music/* {
+    reverse_proxy 127.0.0.1:8090
+  }
+```
+
+`handle_path` 会去掉 `/tool/music` 前缀，再交给 web 容器，所以容器内部仍然按 `/` 和 `/api` 工作。
+
+```bash
+sudo docker exec caddy caddy reload \
+  --config /etc/caddy/Caddyfile \
+  --adapter caddyfile
+```
+
+### 如果站点用 nginx
 
 在 `a2a-platform.com` 的 `server { ... }` 里加：
 
 ```nginx
-# 访问 /tool/music 时补斜杠
 location = /tool/music {
     return 301 /tool/music/;
 }
 
-# 整个工具挂到子路径
 location /tool/music/ {
-    proxy_pass http://127.0.0.1:8080/;
+    proxy_pass http://127.0.0.1:8090/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -87,11 +107,7 @@ location /tool/music/ {
 }
 ```
 
-**`proxy_pass` 末尾的 `/` 不能丢。** 它会把 `/tool/music/xxx` 改写成 `/xxx`，这样 web 容器仍然按根路径提供静态文件，API 也仍然是 `/api/*`。
-
-> 如果现有站点的 nginx 本身也在 Docker 容器里，`127.0.0.1:8080` 指的是 nginx 容器自己；此时改成 `host.docker.internal:8080`，或让两个 compose 共享网络。
-
-然后：
+`proxy_pass` 末尾的 `/` 不能丢。改完：
 
 ```bash
 sudo nginx -t
@@ -113,9 +129,9 @@ curl -fsS https://a2a-platform.com/tool/music/api/health
 ## 五、更新
 
 ```bash
-cd /srv/dukou
+cd /home/admin/dukou
 git pull --ff-only
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+sudo docker compose -p dukou -f docker-compose.prod.yml --env-file .env.production up -d --build
 ```
 
 migration 会在 API 启动前自动执行。`VITE_BASE` 变了才需要重新构建前端；普通后端更新只重建 API。
@@ -124,7 +140,7 @@ migration 会在 API 启动前自动执行。`VITE_BASE` 变了才需要重新�
 
 ```bash
 set -a; source .env.production; set +a
-./scripts/backup-mysql.sh
+sudo -E ./scripts/backup-mysql.sh
 ```
 
 ## 七、GitHub Actions 自动部署
@@ -139,9 +155,9 @@ GitHub Secrets：
 | `ALIYUN_USER` | SSH 用户 |
 | `ALIYUN_PORT` | SSH 端口 |
 | `ALIYUN_SSH_KEY` | 私钥 |
-| `ALIYUN_DEPLOY_PATH` | 服务器仓库路径，例如 `/srv/dukou` |
+| `ALIYUN_DEPLOY_PATH` | 服务器仓库路径，例如 `/home/admin/dukou` |
 
-服务器需要先按上面步骤 clone、创建 `.env.production`，并且 nginx 已加好 location。工作流只负责 `git pull` + `docker compose up -d --build`，不会改 nginx。
+服务器需要先按上面步骤 clone、创建 `.env.production`，并且反向代理已加好 `/tool/music` 路由。工作流只负责 `git pull` + `docker compose up -d --build`，不会改 nginx。
 
 ## 八、常见问题
 
@@ -153,7 +169,7 @@ GitHub Secrets：
 **`/tool/music/api/health` 404**
 
 - 检查 `proxy_pass` 是否是 `http://127.0.0.1:8080/`；
-- 检查容器是否健康：`curl http://127.0.0.1:8080/api/health`。
+- 检查容器是否健康：`curl http://127.0.0.1:8090/api/health`。
 
 **刷新子路由 404**
 
