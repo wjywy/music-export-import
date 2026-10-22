@@ -1,6 +1,8 @@
 FROM node:22-alpine AS build
 
 ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG VITE_BASE=/
+ENV VITE_BASE=$VITE_BASE
 RUN npm config set registry "$NPM_REGISTRY" && npm install -g pnpm@10.34.5
 WORKDIR /repo
 

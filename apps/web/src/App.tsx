@@ -78,12 +78,14 @@ function Protected({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/';
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
-          <BrowserRouter>
+          <BrowserRouter basename={basename}>
             <ScrollToTop />
             <Routes>
               <Route element={<SiteLayout />}>

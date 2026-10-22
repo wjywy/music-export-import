@@ -23,9 +23,11 @@
 
 ## 部署
 
-推荐阿里云 ECS + Docker Compose + Caddy 自动 HTTPS，完整步骤见 [docs/deploy.md](docs/deploy.md)。
+工具挂在现有站点的子路径：`https://a2a-platform.com/tool/music/`。
 
-Vercel 只能托管前端；API、MySQL、扫码会话仍需放在阿里云。GitHub Actions 用于 CI 和手动部署到 ECS。
+前端使用 `/tool/music/` 作为 Vite base，React Router basename 为 `/tool/music`；后端仍由 Docker Compose 启动，现有站点的 nginx 把 `/tool/music/` 反代到 `127.0.0.1:8080`。
+
+完整步骤见 [docs/deploy.md](docs/deploy.md)。
 
 ## 技术栈
 

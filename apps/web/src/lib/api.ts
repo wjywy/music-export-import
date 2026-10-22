@@ -11,7 +11,9 @@ import type {
   User,
 } from './types';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
+const API_BASE = (
+  import.meta.env.VITE_API_BASE ?? `${import.meta.env.BASE_URL}api`
+).replace(/\/$/, '');
 const TOKEN_KEY = 'dukou.token';
 
 export class ApiError extends Error {

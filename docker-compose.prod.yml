@@ -65,6 +65,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        VITE_BASE: ${VITE_BASE:-/tool/music/}
     restart: unless-stopped
     ports:
       - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
