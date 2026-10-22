@@ -17,7 +17,7 @@ export class PlaylistItem {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'playlist_id' })
+  @Column({ name: 'playlist_id', type: 'varchar', length: 36 })
   playlistId: string;
 
   @ManyToOne(() => Playlist, (playlist) => playlist.items, {

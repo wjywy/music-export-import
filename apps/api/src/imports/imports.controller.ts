@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CreateImportDto } from './dto';
+import { BatchImportDto, CreateImportDto } from './dto';
 import { ImportsService } from './imports.service';
 
 @Controller('imports')
@@ -18,6 +18,11 @@ export class ImportsController {
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateImportDto) {
     return this.imports.create(user.sub, dto);
+  }
+
+  @Post('batch')
+  createBatch(@CurrentUser() user: AuthUser, @Body() dto: BatchImportDto) {
+    return this.imports.createBatch(user.sub, dto);
   }
 
   @Get(':id')

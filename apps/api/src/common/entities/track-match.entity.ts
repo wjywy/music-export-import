@@ -12,6 +12,7 @@ import { Platform, PLATFORMS } from '../platforms';
 import { PlaylistItem } from './playlist-item.entity';
 
 export type MatchStatus = 'matched' | 'missing';
+export type MatchSource = 'auto' | 'manual' | 'alias';
 
 @Entity('track_matches')
 @Index(['itemId', 'platform'], { unique: true })
@@ -19,7 +20,7 @@ export class TrackMatch {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'item_id' })
+  @Column({ name: 'item_id', type: 'varchar', length: 36 })
   itemId: string;
 
   @ManyToOne(() => PlaylistItem, (item) => item.matches, { onDelete: 'CASCADE' })
@@ -43,6 +44,12 @@ export class TrackMatch {
 
   @Column({ name: 'remote_url', type: 'varchar', length: 900, nullable: true })
   remoteUrl: string | null;
+
+  @Column({ name: 'remote_id', type: 'varchar', length: 120, nullable: true })
+  remoteId: string | null;
+
+  @Column({ type: 'simple-enum', enum: ['auto', 'manual', 'alias'], default: 'auto' })
+  source: MatchSource;
 
   @Column({ type: 'float', default: 0 })
   score: number;

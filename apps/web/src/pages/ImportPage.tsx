@@ -21,17 +21,28 @@ const EXAMPLES = [
   { platform: 'netease' as Platform, url: 'https://music.163.com/playlist?id=3778678' },
   { platform: 'qq' as Platform, url: 'https://y.qq.com/n/ryqq/playlist/7367094501' },
   { platform: 'kugou' as Platform, url: 'https://www.kugou.com/yy/special/single/5799472.html' },
-  { platform: 'kuwo' as Platform, url: 'https://www.kuwo.cn/playlist_detail/2747666349' },
+  { platform: 'kuwo' as Platform, url: 'https://www.kuwo.cn/playlist_detail/3523198944' },
   { platform: 'apple' as Platform, url: 'https://music.apple.com/cn/playlist/pl.xxxxxxxxxxxxxxxx' },
 ];
+
+type ImportMode = 'single' | 'batch';
 
 export function ImportPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
+  const [mode, setMode] = useState<ImportMode>('single');
   const [url, setUrl] = useState('');
+  const [batchText, setBatchText] = useState('');
+  const [batchTitle, setBatchTitle] = useState('');
   const [target, setTarget] = useState<'' | Platform>('');
   const [jobId, setJobId] = useState<string | null>(null);
   const detected = detectPlatform(url);
+
+  const batchUrls = batchText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10);
 
   const create = useMutation({
     mutationFn: () => api.createImport(url.trim(), target || undefined),
@@ -43,6 +54,24 @@ export function ImportPage() {
       toast(error instanceof Error ? error.message : '导入失败，请重试。', 'error');
     },
   });
+
+  const createBatch = useMutation({
+    mutationFn: () =>
+      api.createBatchImport(
+        batchUrls,
+        target || undefined,
+        batchTitle.trim() || undefined,
+      ),
+    onSuccess: (job) => {
+      setJobId(job.id);
+      toast(`已识别 ${batchUrls.length} 个链接，正在合并。`);
+    },
+    onError: (error) => {
+      toast(error instanceof Error ? error.message : '批量导入失败，请重试。', 'error');
+    },
+  });
+
+  const pending = create.isPending || createBatch.isPending;
 
   const job = useQuery({
     queryKey: ['job', jobId],
@@ -65,10 +94,23 @@ export function ImportPage() {
     }
   }, [job.data?.status, queryClient]);
 
+  function resetForm() {
+    setJobId(null);
+    setUrl('');
+    setBatchText('');
+    setBatchTitle('');
+    setTarget('');
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!url.trim()) return;
     setJobId(null);
+    if (mode === 'batch') {
+      if (batchUrls.length === 0) return;
+      createBatch.mutate();
+      return;
+    }
+    if (!url.trim()) return;
     create.mutate();
   }
 
@@ -80,13 +122,14 @@ export function ImportPage() {
       : detected
         ? PLATFORM_INFO[detected].name
         : null);
+  const queryError = create.error ?? createBatch.error;
 
   return (
     <div className="page page--narrow">
       <div className="page-head">
         <div>
           <span className="eyebrow">导入</span>
-          <h1 className="page-title">把一张歌单，接到这里。</h1>
+          <h1 className="page-title">把歌单，接到这里。</h1>
           <div className="page-meta">
             <span>支持网易云、QQ 音乐、酷狗、酷我、Apple Music 的公开歌单链接</span>
           </div>
@@ -94,37 +137,129 @@ export function ImportPage() {
       </div>
 
       <div className="import-card">
-        <form className="import-form" onSubmit={onSubmit}>
-          <div className="field">
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <span className="field-label">歌单链接</span>
-              {detected ? (
-                <span className="tag">
-                  {PLATFORM_INFO[detected].monogram} · {PLATFORM_INFO[detected].name}
-                </span>
-              ) : url ? (
-                <span className="tag tag--sand">未识别平台</span>
-              ) : null}
+        <div className="mode-tabs" role="group" aria-label="导入方式">
+          <button
+            type="button"
+            className="mode-tab"
+            aria-pressed={mode === 'single'}
+            onClick={() => setMode('single')}
+          >
+            单个链接
+          </button>
+          <button
+            type="button"
+            className="mode-tab"
+            aria-pressed={mode === 'batch'}
+            onClick={() => setMode('batch')}
+          >
+            批量合并
+          </button>
+        </div>
+
+        <form className="import-form" onSubmit={onSubmit} style={{ marginTop: 24 }}>
+          {mode === 'single' ? (
+            <div className="field">
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <span className="field-label">歌单链接</span>
+                {detected ? (
+                  <span className="tag">
+                    {PLATFORM_INFO[detected].monogram} · {PLATFORM_INFO[detected].name}
+                  </span>
+                ) : url ? (
+                  <span className="tag tag--sand">未识别平台</span>
+                ) : null}
+              </div>
+              <div className="url-field">
+                <input
+                  className="input"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="粘贴歌单分享链接，例如 https://music.163.com/playlist?id=..."
+                  required
+                  inputMode="url"
+                  autoComplete="off"
+                />
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={pending || !url.trim()}
+                >
+                  <Upload size={15} />
+                  {create.isPending ? '正在提交…' : '读取并导入'}
+                </button>
+              </div>
+              <span className="field-hint">
+                可以直接粘贴带文字的分享口令，系统会提取其中的链接。读取后歌单会保存到你的账号。
+              </span>
             </div>
-            <div className="url-field">
-              <input
-                className="input"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="粘贴歌单分享链接，例如 https://music.163.com/playlist?id=..."
-                required
-                inputMode="url"
-                autoComplete="off"
-              />
-              <button className="btn btn-primary" type="submit" disabled={create.isPending || !url.trim()}>
+          ) : (
+            <>
+              <div className="field">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span className="field-label">歌单链接（每行一个）</span>
+                  <span className="batch-hint">{batchUrls.length} / 10</span>
+                </div>
+                <textarea
+                  className="textarea"
+                  value={batchText}
+                  onChange={(event) => setBatchText(event.target.value)}
+                  placeholder={
+                    'https://music.163.com/playlist?id=...\nhttps://y.qq.com/n/ryqq/playlist/...\nhttps://www.kugou.com/yy/special/single/....html'
+                  }
+                  style={{ fontFamily: 'var(--mono)', fontSize: 12.5, minHeight: 148 }}
+                  required
+                />
+                <span className="field-hint">
+                  最多 10 个链接，可以跨平台。曲目会合并成一张新歌单，同名同歌手的重复曲目自动去掉。
+                </span>
+              </div>
+              <div className="form-row">
+                <label className="field">
+                  <span className="field-label">合并后的歌单名（可选）</span>
+                  <input
+                    className="input"
+                    value={batchTitle}
+                    onChange={(event) => setBatchTitle(event.target.value)}
+                    placeholder="不填就用第一张歌单命名"
+                    maxLength={200}
+                  />
+                </label>
+                <div className="field">
+                  <span className="field-label">合并结果</span>
+                  <p className="field-hint">
+                    读取 → 合并 → 去重 → 保存。某张读取失败不会中断其它歌单，结果里会说明。
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {mode === 'batch' ? (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-primary"
+                type="submit"
+                disabled={pending || batchUrls.length === 0}
+              >
                 <Upload size={15} />
-                {create.isPending ? '正在提交…' : '读取并导入'}
+                {createBatch.isPending ? '正在提交…' : '读取并合并'}
               </button>
             </div>
-            <span className="field-hint">
-              可以直接粘贴带文字的分享口令，系统会提取其中的链接。读取后歌单会保存到你的账号。
-            </span>
-          </div>
+          ) : null}
 
           <div className="form-row">
             <label className="field">
@@ -151,9 +286,9 @@ export function ImportPage() {
             </div>
           </div>
 
-          {create.error ? (
+          {queryError ? (
             <div className="form-error">
-              {create.error instanceof Error ? create.error.message : '导入失败，请重试。'}
+              {queryError instanceof Error ? queryError.message : '导入失败，请重试。'}
             </div>
           ) : null}
         </form>
@@ -169,7 +304,7 @@ export function ImportPage() {
         </div>
       </div>
 
-      {jobId || create.isPending ? (
+      {jobId || pending ? (
         <div className="job">
           <div className="job-head">
             <div>
@@ -177,8 +312,13 @@ export function ImportPage() {
                 {activeJob ? STATUS_LABEL[activeJob.status] : '正在提交链接…'}
               </div>
               <div className="job-sub">
-                {sourceName ?? '—'}
+                {activeJob?.kind === 'batch'
+                  ? `${activeJob.urls?.length ?? 0} 个链接`
+                  : (sourceName ?? '—')}
                 {activeJob?.total ? ` · ${activeJob.total} 首` : ''}
+                {activeJob?.duplicateCount
+                  ? ` · 去重 ${activeJob.duplicateCount} 首`
+                  : ''}
                 {activeJob?.targetPlatformName ? ` → ${activeJob.targetPlatformName}` : ''}
               </div>
             </div>
@@ -189,28 +329,28 @@ export function ImportPage() {
             <span style={{ width: `${activeJob?.progress ?? 4}%` }} />
           </div>
           <div className="progress-label">
-            {activeJob ? `${activeJob.progress}%` : '准备中'} · {activeJob?.message ?? '正在识别链接…'}
+            {activeJob ? `${activeJob.progress}%` : '准备中'} ·{' '}
+            {activeJob?.message ?? '正在识别链接…'}
           </div>
 
           {activeJob?.status === 'succeeded' ? (
             <div className="job-foot">
-              <span className="field-hint">歌单已保存，可以继续匹配或分享。</span>
+              <span className="field-hint">
+                {activeJob.kind === 'batch'
+                  ? '合并后的歌单已保存，可以继续匹配、去重或分享。'
+                  : '歌单已保存，可以继续匹配或分享。'}
+              </span>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {activeJob.playlistId ? (
-                  <Link className="btn btn-primary btn-sm" to={`/app/playlists/${activeJob.playlistId}`}>
+                  <Link
+                    className="btn btn-primary btn-sm"
+                    to={`/app/playlists/${activeJob.playlistId}`}
+                  >
                     打开歌单
                     <ArrowRight size={14} />
                   </Link>
                 ) : null}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    setJobId(null);
-                    setUrl('');
-                    setTarget('');
-                  }}
-                >
+                <button type="button" className="btn btn-ghost btn-sm" onClick={resetForm}>
                   再导入一张
                 </button>
               </div>
@@ -225,7 +365,8 @@ export function ImportPage() {
                 className="btn btn-ghost btn-sm"
                 onClick={() => {
                   setJobId(null);
-                  create.mutate();
+                  if (mode === 'batch') createBatch.mutate();
+                  else create.mutate();
                 }}
               >
                 重试
@@ -248,7 +389,8 @@ export function ImportPage() {
                 <span>{item.message ?? `${item.platformName ?? '歌单'} 导入`}</span>
               )}
               <span className="recent-meta">
-                {item.platformName ?? '—'} · {STATUS_LABEL[item.status]}
+                {item.kind === 'batch' ? '批量合并' : (item.platformName ?? '—')} ·{' '}
+                {STATUS_LABEL[item.status]}
               </span>
               <span className="recent-meta recent-status">
                 {item.total ? `${item.total} 首` : '—'}

@@ -1,13 +1,16 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -99,6 +102,74 @@ export class AddItemsDto {
   @ValidateNested({ each: true })
   @Type(() => CreatePlaylistItemDto)
   items: CreatePlaylistItemDto[];
+}
+
+export class AssignMatchDto {
+  @IsIn(PLATFORMS, { message: '请选择目标平台。' })
+  platform: Platform;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  remoteId?: string | null;
+
+  @IsString({ message: '缺少目标曲目名。' })
+  @MinLength(1)
+  @MaxLength(250)
+  remoteTitle: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  remoteArtist?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  remoteAlbum?: string | null;
+
+  @IsOptional()
+  @IsUrl({}, { message: '目标曲目链接格式不对。' })
+  @MaxLength(900)
+  remoteUrl?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  remember?: boolean;
+}
+
+export class SearchPlatformDto {
+  @IsIn(PLATFORMS, { message: '请选择平台。' })
+  platform: Platform;
+
+  @IsString()
+  @MinLength(1, { message: '请输入搜索关键词。' })
+  @MaxLength(200)
+  query: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  limit?: number;
+}
+
+export class MergePlaylistsDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: '至少选择一张歌单。' })
+  @ArrayMaxSize(20)
+  @IsUUID('4', { each: true, message: '歌单 ID 不对。' })
+  playlistIds: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
 }
 
 export class MatchDto {

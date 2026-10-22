@@ -1,15 +1,22 @@
 import type {
+  ApplePushResult,
+  AppleStatus,
   AuthResult,
+  DedupeResult,
   Delivery,
   ImportJob,
+  KuwoSessionStatus,
+  MergeResult,
   Platform,
   PlatformInfo,
   PlaylistDetail,
   PlaylistSummary,
   PublicShare,
+  SearchHit,
   Share,
   SharePermission,
   Stats,
+  TrackAlias,
   User,
   Visibility,
 } from './types';
@@ -182,6 +189,72 @@ export const api = {
     request<ImportJob>('/imports', {
       method: 'POST',
       body: jsonBody({ url, ...(targetPlatform ? { targetPlatform } : {}) }),
+      timeoutMs: 60_000,
+    }),
+  createBatchImport: (
+    urls: string[],
+    targetPlatform?: Platform,
+    title?: string,
+  ) =>
+    request<ImportJob>('/imports/batch', {
+      method: 'POST',
+      body: jsonBody({
+        urls,
+        ...(targetPlatform ? { targetPlatform } : {}),
+        ...(title ? { title } : {}),
+      }),
+      timeoutMs: 60_000,
+    }),
+
+  searchPlatform: (platform: Platform, query: string) =>
+    request<{ platform: Platform; query: string; hits: SearchHit[] }>(
+      '/platforms/search',
+      { method: 'POST', body: jsonBody({ platform, query, limit: 8 }) },
+    ),
+  assignMatch: (
+    playlistId: string,
+    itemId: string,
+    input: {
+      platform: Platform;
+      remoteId?: string | null;
+      remoteTitle: string;
+      remoteArtist?: string;
+      remoteAlbum?: string | null;
+      remoteUrl?: string | null;
+      remember?: boolean;
+    },
+  ) =>
+    request<{ matched: boolean; aliasSaved: boolean; remoteTitle: string }>(
+      `/playlists/${playlistId}/items/${itemId}/match`,
+      { method: 'POST', body: jsonBody(input) },
+    ),
+  kuwoSession: () => request<KuwoSessionStatus>('/platforms/kuwo/session'),
+  refreshKuwoSession: () =>
+    request<KuwoSessionStatus>('/platforms/kuwo/session/refresh', {
+      method: 'POST',
+    }),
+  aliases: () => request<TrackAlias[]>('/aliases'),
+  deleteAlias: (id: string) =>
+    request<{ ok: boolean }>(`/aliases/${id}`, { method: 'DELETE' }),
+  mergePlaylists: (playlistIds: string[], title?: string) =>
+    request<MergeResult>('/playlists/merge', {
+      method: 'POST',
+      body: jsonBody({ playlistIds, ...(title ? { title } : {}) }),
+    }),
+  dedupePlaylist: (id: string) =>
+    request<DedupeResult>(`/playlists/${id}/dedupe`, { method: 'POST' }),
+
+  appleConfig: () => request<AppleStatus>('/platforms/apple/config'),
+  appleAuthorize: (musicUserToken: string) =>
+    request<AppleStatus>('/platforms/apple/authorize', {
+      method: 'POST',
+      body: jsonBody({ musicUserToken }),
+    }),
+  appleDisconnect: () =>
+    request<{ ok: boolean }>('/platforms/apple/authorize', { method: 'DELETE' }),
+  applePushPlaylist: (playlistId: string) =>
+    request<ApplePushResult>(`/platforms/apple/playlists/${playlistId}/push`, {
+      method: 'POST',
       timeoutMs: 60_000,
     }),
 

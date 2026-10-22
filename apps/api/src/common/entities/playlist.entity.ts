@@ -19,7 +19,7 @@ export class Playlist {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'owner_id' })
+  @Column({ name: 'owner_id', type: 'varchar', length: 36 })
   ownerId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })

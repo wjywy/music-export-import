@@ -7,9 +7,16 @@ interface Props {
   platform?: Platform | null;
   mode?: 'owner' | 'public';
   emptyLabel?: string;
+  onAssign?: (track: Track) => void;
 }
 
-export function TrackTable({ tracks, platform, mode = 'owner', emptyLabel }: Props) {
+export function TrackTable({
+  tracks,
+  platform,
+  mode = 'owner',
+  emptyLabel,
+  onAssign,
+}: Props) {
   const hasSource =
     mode === 'owner' &&
     tracks.some(
@@ -75,13 +82,26 @@ export function TrackTable({ tracks, platform, mode = 'owner', emptyLabel }: Pro
                       {match?.status === 'matched' ? (
                         <span className="status status--ok">
                           <Check size={12} />
-                          已匹配
+                          {match.source === 'manual'
+                            ? '手动'
+                            : match.source === 'alias'
+                              ? '记住'
+                              : '已匹配'}
                           <span className="score">{formatScore(match.score)}</span>
                         </span>
-                      ) : match?.status === 'missing' ? (
-                        <span className="status status--warn">待手动</span>
                       ) : (
-                        <span className="status status--warn">未匹配</span>
+                        <span className="status status--warn">
+                          {match?.status === 'missing' ? '待手动' : '未匹配'}
+                          {onAssign && 'matches' in track ? (
+                            <button
+                              type="button"
+                              className="assign-btn"
+                              onClick={() => onAssign(track as Track)}
+                            >
+                              指定
+                            </button>
+                          ) : null}
+                        </span>
                       )}
                     </td>
                   ) : null}

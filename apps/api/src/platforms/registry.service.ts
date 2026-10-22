@@ -105,7 +105,7 @@ export class PlatformRegistry {
       netease: { configured: true, auth: '公开接口' },
       qq: { configured: true, auth: 'QQ_COOKIE（可选）' },
       kugou: { configured: true, auth: '公开接口' },
-      kuwo: { configured: has(process.env.KUWO_COOKIE), auth: 'KUWO_COOKIE' },
+      kuwo: { configured: true, auth: 'KUWO_COOKIE（可选）' },
       apple: { configured: has(process.env.APPLE_MUSIC_TOKEN), auth: 'APPLE_MUSIC_TOKEN' },
     };
   }

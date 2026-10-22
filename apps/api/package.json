@@ -7,7 +7,17 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "seed": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/seed.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:migrate": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/migrate.ts up",
+    "db:revert": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/migrate.ts revert",
+    "db:show": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/migrate.ts show",
+    "db:check": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/migrate.ts check",
+    "db:generate": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/generate.ts",
+    "db:migrate:prod": "node dist/database/migrate.js up",
+    "db:check:prod": "node dist/database/migrate.js check",
+    "db:reset": "TS_NODE_TRANSPILE_ONLY=1 ts-node src/database/migrate.ts reset",
+    "test:unit": "node --test -r ts-node/register test/unit/*.test.ts",
+    "test:e2e": "DB_NAME=dukou_test pnpm db:reset && DB_NAME=dukou_test node --test -r ts-node/register test/e2e/api.e2e.test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -19,16 +29,19 @@
     "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "dotenv": "^17.4.1",
     "express": "^5.2.1",
     "mysql2": "^3.14.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "sql.js": "^1.13.0",
     "typeorm": "^0.3.27"
   },
   "devDependencies": {
+    "@nestjs/testing": "^11.2.7",
     "@types/express": "^5.0.3",
     "@types/node": "^24.7.0",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

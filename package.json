@@ -10,6 +10,13 @@
     "build": "pnpm --filter @dukou/api build && pnpm --filter @dukou/web build",
     "start:api": "pnpm --filter @dukou/api start",
     "seed": "pnpm --filter @dukou/api seed",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @dukou/api test:unit && pnpm --filter @dukou/api test:e2e && pnpm test:ui",
+    "test:unit": "pnpm --filter @dukou/api test:unit",
+    "test:e2e": "pnpm --filter @dukou/api test:e2e",
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
   }
 }

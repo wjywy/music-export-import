@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
+import { AppleModule } from './apple/apple.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { ImportsModule } from './imports/imports.module';
@@ -11,27 +11,7 @@ import { PlaylistsModule } from './playlists/playlists.module';
 import { SharesModule } from './shares/shares.module';
 import { UsersModule } from './users/users.module';
 
-function databaseOptions(config: ConfigService): TypeOrmModuleOptions {
-  const driver = config.get<string>('DB_DRIVER', 'mysql');
-  if (driver === 'sqljs') {
-    const configured = config.get<string>('DB_SQLJS_PATH', 'data/dukou.sqlite');
-    const location = isAbsolute(configured) ? configured : join(process.cwd(), configured);
-    mkdirSync(dirname(location), { recursive: true });
-    return {
-      type: 'sqljs',
-      location,
-      autoSave: true,
-      autoLoadEntities: true,
-      synchronize: true,
-      logging: false,
-    };
-  }
-
-  if (driver !== 'mysql') {
-    throw new Error(`DB_DRIVER 只支持 mysql 或 sqljs，收到：${driver}`);
-  }
-
-  const synchronize = config.get<string>('DB_SYNCHRONIZE', 'true') !== 'false';
+export function databaseOptions(config: ConfigService): TypeOrmModuleOptions {
   return {
     type: 'mysql',
     host: config.get<string>('DB_HOST', '127.0.0.1'),
@@ -41,7 +21,10 @@ function databaseOptions(config: ConfigService): TypeOrmModuleOptions {
     database: config.get<string>('DB_NAME', 'dukou'),
     charset: 'utf8mb4',
     timezone: 'Z',
-    synchronize,
+    synchronize: false,
+    migrationsRun: false,
+    migrations: [join(__dirname, 'database/migrations/*{.ts,.js}')],
+    migrationsTableName: 'migrations',
     autoLoadEntities: true,
     logging: false,
     extra: { connectionLimit: 10 },
@@ -64,6 +47,7 @@ function databaseOptions(config: ConfigService): TypeOrmModuleOptions {
     PlaylistsModule,
     ImportsModule,
     SharesModule,
+    AppleModule,
     HealthModule,
   ],
 })

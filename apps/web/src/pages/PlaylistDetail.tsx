@@ -8,6 +8,7 @@ import {
   ShareIcon,
   Trash,
 } from '../components/Icons';
+import { AssignMatchDialog } from '../components/AssignMatchDialog';
 import { Dialog } from '../components/Dialog';
 import { EmptyState } from '../components/EmptyState';
 import { Loading, LoadingBlock } from '../components/Loading';
@@ -17,7 +18,7 @@ import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { formatDate, formatRelative } from '../lib/format';
 import { platformName, PLATFORM_INFO, PLATFORM_ORDER } from '../lib/platforms';
-import type { Platform, SharePermission, Visibility } from '../lib/types';
+import type { Platform, SharePermission, Track, Visibility } from '../lib/types';
 
 const VISIBILITY_LABEL: Record<Visibility, string> = {
   private: '私密',
@@ -40,6 +41,7 @@ export function PlaylistDetail() {
   const [editVisibility, setEditVisibility] = useState<Visibility>('private');
   const [sharePermission, setSharePermission] = useState<SharePermission>('clone');
   const [shareExpiry, setShareExpiry] = useState(0);
+  const [assignTarget, setAssignTarget] = useState<Track | null>(null);
 
   const detail = useQuery({
     queryKey: ['playlist', id],
@@ -47,6 +49,12 @@ export function PlaylistDetail() {
     enabled: Boolean(id),
   });
   const shares = useQuery({ queryKey: ['shares'], queryFn: api.shares });
+  const appleConfig = useQuery({
+    queryKey: ['apple-config'],
+    queryFn: api.appleConfig,
+    staleTime: 60_000,
+    retry: false,
+  });
 
   useEffect(() => {
     if (platform || !detail.data) return;
@@ -93,6 +101,30 @@ export function PlaylistDetail() {
       toast('分享链接已取消。');
     },
     onError: () => toast('取消失败，请重试。', 'error'),
+  });
+
+  const applePush = useMutation({
+    mutationFn: () => api.applePushPlaylist(id as string),
+    onSuccess: (result) => {
+      toast(`已写入 Apple Music 资料库：${result.added} 首。`);
+    },
+    onError: (error) => {
+      toast(error instanceof Error ? error.message : '写入 Apple Music 失败。', 'error');
+    },
+  });
+
+  const dedupe = useMutation({
+    mutationFn: () => api.dedupePlaylist(id as string),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['playlist', id] });
+      void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      toast(
+        result.removed > 0
+          ? `已去掉 ${result.removed} 首重复曲目。`
+          : '没有发现重复曲目。',
+      );
+    },
+    onError: () => toast('去重失败，请重试。', 'error'),
   });
 
   const update = useMutation({
@@ -175,6 +207,7 @@ export function PlaylistDetail() {
     : '';
   const matchedForPlatform = platform ? (playlist.matches[platform] ?? 0) : 0;
   const hasMatch = platform ? matchedForPlatform > 0 : false;
+  const appleBlocked = platform === 'apple' && appleConfig.data?.configured === false;
 
   return (
     <div className="page">
@@ -259,7 +292,11 @@ export function PlaylistDetail() {
               {playlist.itemCount} 首 · {platformName(playlist.sourcePlatform)}
             </span>
           </div>
-          <TrackTable tracks={playlist.items} platform={platform} />
+          <TrackTable
+            tracks={playlist.items}
+            platform={platform}
+            onAssign={setAssignTarget}
+          />
         </div>
 
         <aside className="aside-stack">
@@ -285,14 +322,21 @@ export function PlaylistDetail() {
             <button
               type="button"
               className="btn btn-primary btn-block btn-sm"
-              disabled={!platform || match.isPending || playlist.itemCount === 0}
+              disabled={
+                !platform ||
+                match.isPending ||
+                playlist.itemCount === 0 ||
+                appleBlocked
+              }
               onClick={() => platform && match.mutate(platform)}
             >
               {match.isPending
                 ? '正在逐首比对…'
-                : platform
-                  ? `匹配到 ${PLATFORM_INFO[platform].short}`
-                  : '选择目标平台'}
+                : appleBlocked
+                  ? 'Apple 未配置'
+                  : platform
+                    ? `匹配到 ${PLATFORM_INFO[platform].short}`
+                    : '选择目标平台'}
             </button>
 
             {match.isPending ? (
@@ -341,6 +385,48 @@ export function PlaylistDetail() {
                 送达清单
               </button>
             </div>
+
+            {platform === 'apple' ? (
+              <>
+                <div className="panel-divider" />
+                <span className="field-label">Apple Music 资料库</span>
+                {appleConfig.data?.authorized ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-block btn-sm"
+                      style={{ marginTop: 10 }}
+                      disabled={applePush.isPending || !hasMatch}
+                      onClick={() => applePush.mutate()}
+                    >
+                      {applePush.isPending
+                        ? '正在写入…'
+                        : `写入资料库（${matchedForPlatform} 首）`}
+                    </button>
+                    {applePush.data ? (
+                      <p className="field-hint" style={{ marginTop: 8 }}>
+                        已创建「{applePush.data.name}」。
+                        <a
+                          href={applePush.data.libraryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          打开资料库歌单
+                        </a>
+                      </p>
+                    ) : null}
+                  </>
+                ) : appleConfig.data?.configured ? (
+                  <p className="field-hint" style={{ marginTop: 8 }}>
+                    先到<Link to="/app/settings">设置</Link>里连接 Apple Music，匹配完成后就可以写入资料库。
+                  </p>
+                ) : (
+                  <p className="field-hint" style={{ marginTop: 8 }}>
+                    服务端未配置 APPLE_MUSIC_TOKEN，暂时无法写入 Apple Music。
+                  </p>
+                )}
+              </>
+            ) : null}
           </section>
 
           <section className="panel" id="share-panel">
@@ -443,6 +529,14 @@ export function PlaylistDetail() {
             <div className="panel-actions">
               <button type="button" className="btn btn-ghost btn-sm" onClick={openEdit}>
                 编辑信息
+              </button>
+              <button
+                type="button"
+                className="btn btn-quiet btn-sm"
+                onClick={() => dedupe.mutate()}
+                disabled={dedupe.isPending}
+              >
+                {dedupe.isPending ? '正在去重…' : '去除重复'}
               </button>
               <button
                 type="button"
@@ -573,6 +667,16 @@ export function PlaylistDetail() {
           </label>
         </div>
       </Dialog>
+
+      {platform ? (
+        <AssignMatchDialog
+          open={Boolean(assignTarget)}
+          playlistId={playlist.id}
+          track={assignTarget}
+          platform={platform}
+          onClose={() => setAssignTarget(null)}
+        />
+      ) : null}
 
       <Dialog
         open={deleteOpen}

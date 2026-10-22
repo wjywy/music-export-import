@@ -22,14 +22,14 @@ export class Share {
   @Column({ length: 40 })
   token: string;
 
-  @Column({ name: 'playlist_id' })
+  @Column({ name: 'playlist_id', type: 'varchar', length: 36 })
   playlistId: string;
 
   @ManyToOne(() => Playlist, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'playlist_id' })
   playlist: Playlist;
 
-  @Column({ name: 'creator_id' })
+  @Column({ name: 'creator_id', type: 'varchar', length: 36 })
   creatorId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: dukou_test
+          MYSQL_USER: dukou
+          MYSQL_PASSWORD: dukou
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -udokou -pdukou"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: dukou
+      DB_PASSWORD: dukou
+      DB_NAME: dukou_test
+      JWT_SECRET: ci-only-secret
+      CREDENTIALS_SECRET: ci-only-credential-secret
+      WEB_ORIGIN: http://127.0.0.1:5280
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migrate test database
+        run: pnpm --filter @dukou/api db:reset
+
+      - name: Check migration drift
+        run: pnpm --filter @dukou/api db:check
+
+      - name: Unit tests
+        run: pnpm --filter @dukou/api test:unit
+
+      - name: Nest e2e tests
+        run: pnpm --filter @dukou/api test:e2e
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Playwright Chrome
+        run: pnpm exec playwright install --with-deps chrome
+
+      - name: Playwright UI tests
+        run: pnpm test:ui
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

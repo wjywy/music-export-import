@@ -18,8 +18,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { isPlatform, Platform } from '../common/platforms';
 import {
   AddItemsDto,
+  AssignMatchDto,
   CreatePlaylistDto,
   MatchDto,
+  MergePlaylistsDto,
   UpdatePlaylistDto,
 } from './dto';
 import { ExportFormat, PlaylistsService } from './playlists.service';
@@ -42,6 +44,11 @@ export class PlaylistsController {
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreatePlaylistDto) {
     return this.playlists.create(user.sub, dto);
+  }
+
+  @Post('merge')
+  merge(@CurrentUser() user: AuthUser, @Body() dto: MergePlaylistsDto) {
+    return this.playlists.mergePlaylists(user.sub, dto);
   }
 
   @Get(':id')
@@ -80,6 +87,21 @@ export class PlaylistsController {
     @Param('itemId') itemId: string,
   ) {
     return this.playlists.removeItem(id, user.sub, itemId);
+  }
+
+  @Post(':id/dedupe')
+  dedupe(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.playlists.dedupePlaylist(id, user.sub);
+  }
+
+  @Post(':id/items/:itemId/match')
+  assignMatch(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: AssignMatchDto,
+  ) {
+    return this.playlists.assignMatch(id, user.sub, itemId, dto);
   }
 
   @Post(':id/match')

@@ -47,6 +47,8 @@ export interface TrackMatch {
   remoteArtist: string | null;
   remoteAlbum: string | null;
   remoteUrl: string | null;
+  remoteId: string | null;
+  source: 'auto' | 'manual' | 'alias';
   score: number;
 }
 
@@ -132,6 +134,10 @@ export interface ImportJob {
   total: number;
   matched: number;
   playlistId: string | null;
+  kind: 'single' | 'batch';
+  urls: string[] | null;
+  duplicateCount: number;
+  resultTitle: string | null;
   message: string | null;
   createdAt: string;
   updatedAt: string;
@@ -154,4 +160,64 @@ export interface Delivery {
   total: number;
   ready: number;
   rows: DeliveryRow[];
+}
+
+export interface SearchHit {
+  title: string;
+  artist: string;
+  album: string | null;
+  durationMs: number | null;
+  coverUrl: string | null;
+  sourceUrl: string | null;
+  sourceId: string | null;
+}
+
+export interface TrackAlias {
+  id: string;
+  platform: Platform;
+  titleKey: string;
+  artistKey: string;
+  remoteId: string | null;
+  remoteTitle: string;
+  remoteArtist: string;
+  remoteUrl: string | null;
+  score: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppleStatus {
+  configured: boolean;
+  authorized: boolean;
+  storefront: string;
+  developerToken?: string;
+  connectedAt?: string | null;
+  note?: string;
+}
+
+export interface ApplePushResult {
+  libraryPlaylistId: string;
+  name: string;
+  added: number;
+  skipped: number;
+  libraryUrl: string;
+}
+
+export interface MergeResult {
+  playlist: PlaylistSummary;
+  total: number;
+  duplicatesRemoved: number;
+}
+
+export interface DedupeResult {
+  removed: number;
+  itemCount: number;
+  detail: PlaylistDetail;
+}
+
+export interface KuwoSessionStatus {
+  source: 'env' | 'auto' | 'none';
+  cookieNames: string[];
+  refreshedAt: string | null;
+  autoRefreshSeconds: number;
 }

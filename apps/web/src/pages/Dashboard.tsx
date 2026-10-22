@@ -23,6 +23,9 @@ export function Dashboard() {
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('private');
   const [lines, setLines] = useState('');
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeIds, setMergeIds] = useState<string[]>([]);
+  const [mergeTitle, setMergeTitle] = useState('');
 
   const playlists = useQuery({ queryKey: ['playlists'], queryFn: api.playlists });
   const stats = useQuery({ queryKey: ['stats'], queryFn: api.stats });
@@ -67,6 +70,27 @@ export function Dashboard() {
     },
   });
 
+  const merge = useMutation({
+    mutationFn: () =>
+      api.mergePlaylists(mergeIds, mergeTitle.trim() || undefined),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      void queryClient.invalidateQueries({ queryKey: ['stats'] });
+      toast(
+        result.duplicatesRemoved > 0
+          ? `已合并 ${result.total} 首，去掉 ${result.duplicatesRemoved} 首重复。`
+          : `已合并 ${result.total} 首。`,
+      );
+      setMergeOpen(false);
+      setMergeIds([]);
+      setMergeTitle('');
+      navigate(`/app/playlists/${result.playlist.id}`);
+    },
+    onError: (error) => {
+      toast(error instanceof Error ? error.message : '合并失败，请重试。', 'error');
+    },
+  });
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!title.trim()) return;
@@ -101,6 +125,14 @@ export function Dashboard() {
           >
             <Plus size={15} />
             新建歌单
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setMergeOpen(true)}
+            disabled={!playlists.data || playlists.data.length < 2}
+          >
+            合并歌单
           </button>
           <Link className="btn btn-primary" to="/app/import">
             <Upload size={15} />
@@ -253,6 +285,67 @@ export function Dashboard() {
             </select>
           </label>
         </form>
+      </Dialog>
+
+      <Dialog
+        open={mergeOpen}
+        title="合并歌单"
+        subtitle="选择两张或更多歌单，合并成一张新的。同曲名、同歌手的重复曲目会自动去掉。"
+        onClose={() => setMergeOpen(false)}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setMergeOpen(false)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={merge.isPending || mergeIds.length < 2}
+              onClick={() => merge.mutate()}
+            >
+              {merge.isPending ? '正在合并…' : `合并 ${mergeIds.length} 张`}
+            </button>
+          </>
+        }
+      >
+        <div className="import-form">
+          <label className="field">
+            <span className="field-label">新歌单名（可选）</span>
+            <input
+              className="input"
+              value={mergeTitle}
+              onChange={(event) => setMergeTitle(event.target.value)}
+              placeholder="不填就用第一张歌单命名"
+              maxLength={200}
+            />
+          </label>
+          <div className="merge-list">
+            {(playlists.data ?? []).map((playlist) => {
+              const checked = mergeIds.includes(playlist.id);
+              return (
+                <label className="merge-row" key={playlist.id}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) =>
+                      setMergeIds((current) =>
+                        event.target.checked
+                          ? [...current, playlist.id]
+                          : current.filter((id) => id !== playlist.id),
+                      )
+                    }
+                  />
+                  <span>{playlist.title}</span>
+                  <span className="merge-row-sub">{playlist.itemCount} 首</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
       </Dialog>
     </div>
   );

@@ -61,8 +61,8 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
     read: true,
     search: true,
     write: false,
-    auth: 'cookie',
-    note: '接口校验 csrf，通常需要浏览器 Cookie。',
+    auth: 'none',
+    note: '公开网页与搜索接口可直接读取；可选 KUWO_COOKIE 用于登录态场景。',
   },
   apple: {
     platform: 'apple',
@@ -71,9 +71,9 @@ export const PLATFORM_META: Record<Platform, PlatformMeta> = {
     monogram: 'A',
     read: true,
     search: true,
-    write: false,
+    write: true,
     auth: 'token',
-    note: '需要 Apple Music 开发者令牌（MusicKit）。',
+    note: '读取需要开发者令牌；用户在设置里完成 MusicKit 授权后可写入资料库。',
   },
 };
 

@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-dukou}
+      MYSQL_USER: ${DB_USER:-dukou}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u${DB_USER:-dukou}", "-p${DB_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    volumes:
+      - dukou-mysql-prod:/var/lib/mysql
+    networks: [dukou]
+
+  api:
+    image: dukou-api:latest
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-dukou}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-dukou}
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      CREDENTIALS_SECRET: ${CREDENTIALS_SECRET:-}
+      JWT_EXPIRES_IN: 7d
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:8080}
+      NETEASE_COOKIE: ${NETEASE_COOKIE:-}
+      QQ_COOKIE: ${QQ_COOKIE:-}
+      KUWO_COOKIE: ${KUWO_COOKIE:-}
+      APPLE_MUSIC_TOKEN: ${APPLE_MUSIC_TOKEN:-}
+      APPLE_MUSIC_STOREFRONT: ${APPLE_MUSIC_STOREFRONT:-cn}
+    command: sh -c "node dist/database/migrate.js up && node dist/main.js"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [dukou]
+
+  web:
+    image: dukou-web:latest
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    networks: [dukou]
+
+volumes:
+  dukou-mysql-prod:
+
+networks:
+  dukou:
+    driver: bridge
