@@ -8,9 +8,10 @@ interface Props {
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  wide?: boolean;
 }
 
-export function Dialog({ open, title, subtitle, onClose, children, footer }: Props) {
+export function Dialog({ open, title, subtitle, onClose, children, footer, wide }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -35,7 +36,7 @@ export function Dialog({ open, title, subtitle, onClose, children, footer }: Pro
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`dialog${wide ? ' dialog--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="dialog-head">
           <div>
             <h2>{title}</h2>

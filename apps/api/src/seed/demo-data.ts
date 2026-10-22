@@ -52,19 +52,4 @@ export const DEMO_PLAYLISTS: DemoPlaylist[] = [
       { title: '大鱼', artist: '周深', album: '大鱼海棠 电影原声带', durationMs: 313_000 },
     ],
   },
-  {
-    title: '雨天旧唱片',
-    description: '雨落在旧唱片上，针尖顺着纹路往回走。',
-    platform: 'kugou',
-    tracks: [
-      { title: '山丘', artist: '李宗盛', album: '山丘', durationMs: 378_000 },
-      { title: '恋曲1990', artist: '罗大佑', album: '爱人同志', durationMs: 304_000 },
-      { title: '被遗忘的时光', artist: '蔡琴', album: '此情可待', durationMs: 196_000 },
-      { title: '当年情', artist: '张国荣', album: '英雄本色 电影原声带', durationMs: 246_000 },
-      { title: '女人花', artist: '梅艳芳', album: '女人花', durationMs: 285_000 },
-      { title: '海阔天空', artist: 'Beyond', album: '乐与怒', durationMs: 326_000 },
-      { title: '一生何求', artist: '陈百强', album: '一生何求', durationMs: 270_000 },
-      { title: '一场游戏一场梦', artist: '王杰', album: '一场游戏一场梦', durationMs: 264_000 },
-    ],
-  },
 ];

@@ -178,6 +178,80 @@ test('assigns a match manually and remembers the mapping', async () => {
     .expect(200);
 });
 
+test('builds a QQ text transfer plan from matched tracks', async () => {
+  const res = await request(http)
+    .get(`/api/playlists/${playlistId}/transfer?target=qq&format=song-singer&chunk=200`)
+    .set(auth(token))
+    .expect(200);
+
+  assert.equal(res.body.target, 'qq');
+  assert.equal(res.body.targetName, 'QQ 音乐');
+  assert.equal(res.body.total, 2);
+  assert.equal(res.body.matched, 1);
+  assert.ok(res.body.text.includes('晴天（手动指定） - 周杰伦'));
+  assert.ok(res.body.text.includes('富士山下 - 陈奕迅'));
+  assert.ok(Array.isArray(res.body.chunks));
+  assert.ok(res.body.chunks.length >= 1);
+  assert.ok(res.body.steps.length >= 2);
+  assert.match(res.body.importUrl, /y\.qq\.com/);
+});
+
+test('netease transfer reports the missing QQ link for a self-built playlist', async () => {
+  const res = await request(http)
+    .get(`/api/playlists/${playlistId}/transfer?target=netease`)
+    .set(auth(token))
+    .expect(200);
+
+  assert.equal(res.body.target, 'netease');
+  assert.equal(res.body.sourceLink, null);
+  assert.match(res.body.note, /没有可用的 QQ 音乐原始链接/);
+  assert.ok(res.body.steps.some((step: string) => step.includes('不能直接粘贴文字')));
+});
+
+test('rejects transfer of an empty playlist', async () => {
+  const empty = await request(http)
+    .post('/api/playlists')
+    .set(auth(token))
+    .send({ title: 'E2E 空歌单' })
+    .expect(201);
+
+  await request(http)
+    .get(`/api/playlists/${empty.body.id}/transfer?target=qq`)
+    .set(auth(token))
+    .expect(400);
+});
+
+test('reports disconnected music accounts', async () => {
+  const res = await request(http)
+    .get('/api/accounts')
+    .set(auth(token))
+    .expect(200);
+  assert.equal(res.body.accounts.length, 2);
+  assert.ok(res.body.accounts.every((entry: { connected: boolean }) => entry.connected === false));
+});
+
+test('rejects an unsupported account platform', async () => {
+  await request(http)
+    .post('/api/accounts/spotify/qr')
+    .set(auth(token))
+    .expect(400);
+});
+
+test('rejects a push without a connected account', async () => {
+  await request(http)
+    .post(`/api/playlists/${playlistId}/push`)
+    .set(auth(token))
+    .send({ platform: 'netease' })
+    .expect(401);
+});
+
+test('rejects an unsupported transfer target', async () => {
+  await request(http)
+    .get(`/api/playlists/${playlistId}/transfer?target=spotify`)
+    .set(auth(token))
+    .expect(400);
+});
+
 test('merges playlists and removes duplicates', async () => {
   const extra = await request(http)
     .post('/api/playlists')

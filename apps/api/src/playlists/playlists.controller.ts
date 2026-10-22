@@ -25,6 +25,13 @@ import {
   UpdatePlaylistDto,
 } from './dto';
 import { ExportFormat, PlaylistsService } from './playlists.service';
+import {
+  isTransferFormat,
+  isTransferTarget,
+  MAX_TRANSFER_CHUNK,
+  MIN_TRANSFER_CHUNK,
+  TransferTextFormat,
+} from './transfer';
 
 @Controller('playlists')
 @UseGuards(JwtAuthGuard)
@@ -133,6 +140,46 @@ export class PlaylistsController {
       throw new BadRequestException('请选择要送达的平台。');
     }
     return this.playlists.delivery(id, user.sub, platform);
+  }
+
+  @Get(':id/transfer')
+  transfer(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query('target') target?: string,
+    @Query('format') format?: string,
+    @Query('chunk') chunk?: string,
+  ) {
+    if (!isTransferTarget(target)) {
+      throw new BadRequestException('目标平台目前只支持 QQ 音乐和网易云音乐。');
+    }
+
+    let textFormat: TransferTextFormat = 'song-singer';
+    if (format !== undefined) {
+      if (!isTransferFormat(format)) {
+        throw new BadRequestException(
+          '文本格式只支持 song-singer、singer-song、song-only。',
+        );
+      }
+      textFormat = format;
+    }
+
+    let chunkChars: number | undefined;
+    if (chunk !== undefined) {
+      const value = Number(chunk);
+      if (
+        !Number.isInteger(value) ||
+        value < MIN_TRANSFER_CHUNK ||
+        value > MAX_TRANSFER_CHUNK
+      ) {
+        throw new BadRequestException(
+          `分段长度需在 ${MIN_TRANSFER_CHUNK}–${MAX_TRANSFER_CHUNK} 字符之间。`,
+        );
+      }
+      chunkChars = value;
+    }
+
+    return this.playlists.transfer(id, user.sub, target, textFormat, chunkChars);
   }
 
   @Get(':id/export')

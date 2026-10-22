@@ -64,11 +64,6 @@ export function Login() {
             {pending ? '正在登录…' : '登录'}
           </button>
         </form>
-        <div className="demo-note">
-          演示账号：<code>demo@dukou.app</code> / <code>demo1234</code>
-          <br />
-          想保留自己的歌单，也可以直接创建新账号。
-        </div>
       </div>
       <p className="auth-switch">
         还没有账号？<Link to="/register" state={location.state}>创建一个</Link>

@@ -1747,6 +1747,10 @@ img {
 }
 
 .dialog-head {
+  position: sticky;
+  top: -1px;
+  z-index: 2;
+  background: var(--parchment);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2639,5 +2643,233 @@ img {
 
   .tracks .status-cell {
     width: 104px;
+  }
+}
+
+/* ── transfer dialog ─────────────────────────────────────── */
+
+.dialog--wide {
+  max-width: 720px;
+}
+
+.btn-xs {
+  font-size: 12px;
+  padding: 4px 9px;
+  min-height: 28px;
+}
+
+.transfer-targets {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.transfer-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--stone);
+}
+
+.transfer-chunks {
+  display: grid;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.transfer-chunk {
+  overflow: hidden;
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.transfer-chunk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--stone);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.transfer-text {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.transfer-warning {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  background: #f6ece7;
+  border: 1px solid #e0cfc7;
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.transfer-warning svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.transfer-fallback {
+  margin-top: 12px;
+}
+
+.transfer-fallback summary {
+  color: var(--brand);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.transfer-fallback .transfer-text {
+  max-height: 220px;
+  margin-top: 8px;
+}
+
+.transfer-steps {
+  margin-top: 14px;
+  padding-left: 20px;
+  color: var(--stone);
+  font-size: 12.5px;
+  line-height: 1.7;
+  list-style: decimal;
+}
+
+.transfer-note {
+  margin-top: 10px;
+}
+
+/* ── account connect / push ──────────────────────────────── */
+
+.transfer-account {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.transfer-account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.transfer-account-head h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.account-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.account-qr img {
+  width: 200px;
+  height: 200px;
+  padding: 6px;
+  image-rendering: pixelated;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.account-qr p {
+  color: var(--stone);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.push-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--brand-tint);
+  border: 1px solid #cfdceb;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  color: var(--dark-warm);
+}
+
+.push-result a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--brand);
+}
+
+.transfer-manual-head {
+  margin: 20px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--stone);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+/* ── landing platform pair ───────────────────────────────── */
+
+.landing-hero .platform-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
+}
+
+.landing-hero .platform-card {
+  padding: 20px;
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.landing-hero .platform-card p {
+  margin-top: 10px;
+  color: var(--stone);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .landing-hero .platform-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-hero .platform-card {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0;
+    padding: 18px 0;
   }
 }

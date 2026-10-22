@@ -1,6 +1,6 @@
 import type { Platform } from './types';
 
-export const PLATFORM_ORDER: Platform[] = ['netease', 'qq', 'kugou', 'kuwo', 'apple'];
+export const PLATFORM_ORDER: Platform[] = ['netease', 'qq'];
 
 export const PLATFORM_INFO: Record<
   Platform,
@@ -26,8 +26,5 @@ export function detectPlatform(url: string): Platform | null {
   if (!value) return null;
   if (value.includes('music.163.com') || value.includes('163cn.tv')) return 'netease';
   if (value.includes('y.qq.com') || value.includes('i.y.qq.com') || value.includes('qq.com')) return 'qq';
-  if (value.includes('kugou.com')) return 'kugou';
-  if (value.includes('kuwo.cn')) return 'kuwo';
-  if (value.includes('music.apple.com')) return 'apple';
   return null;
 }

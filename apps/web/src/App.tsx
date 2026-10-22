@@ -20,8 +20,6 @@ import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
 import { PlaylistDetail } from './pages/PlaylistDetail';
 import { Register } from './pages/Register';
-import { Settings } from './pages/Settings';
-import { SharePage } from './pages/SharePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,7 +90,6 @@ export default function App() {
                 <Route index element={<Landing />} />
                 <Route path="login" element={<Login />} />
                 <Route path="register" element={<Register />} />
-                <Route path="s/:token" element={<SharePage />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
               <Route element={<AppLayout />}>
@@ -117,14 +114,6 @@ export default function App() {
                   element={
                     <Protected>
                       <PlaylistDetail />
-                    </Protected>
-                  }
-                />
-                <Route
-                  path="app/settings"
-                  element={
-                    <Protected>
-                      <Settings />
                     </Protected>
                   }
                 />

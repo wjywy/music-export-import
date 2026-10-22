@@ -1,15 +1,42 @@
+# dependencies
 node_modules/
+.pnpm-store/
+
+# build output
 dist/
+build/
+*.tsbuildinfo
+apps/web/.vite/
+
+# env / secrets
 .env
-.env.local
-*.log
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+
+# local data / runtime
 data/
 apps/api/data/
-apps/web/.vite/
-.DS_Store
-coverage/
-
 backups/
-.env.production
-playwright-report/
+.auth-state/
+*.sqlite
+*.sqlite3
+*.db
+
+# logs / OS
+*.log
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# tests
+coverage/
 test-results/
+playwright-report/
+blob-report/
+
+# editors
+.idea/
+.vscode/

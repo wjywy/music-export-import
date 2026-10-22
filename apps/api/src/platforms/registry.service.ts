@@ -42,7 +42,9 @@ export class PlatformRegistry {
   }
 
   list(): PlatformMeta[] {
-    return PLATFORMS.map((platform) => this.adapters[platform].meta);
+    return (['netease', 'qq'] as Platform[]).map(
+      (platform) => this.adapters[platform].meta,
+    );
   }
 
   get(platform: Platform): PlatformAdapter {

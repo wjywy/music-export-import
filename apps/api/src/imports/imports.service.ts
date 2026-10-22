@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ImportJob } from '../common/entities/import-job.entity';
@@ -21,6 +21,7 @@ export class ImportsService {
 
   async create(userId: string, dto: CreateImportDto) {
     const ref = await this.registry.resolve(dto.url);
+    this.assertSupported(ref);
     const job = await this.jobs.save(
       this.jobs.create({
         userId,
@@ -39,7 +40,9 @@ export class ImportsService {
   async createBatch(userId: string, dto: BatchImportDto) {
     const refs: ParsedRef[] = [];
     for (const url of dto.urls) {
-      refs.push(await this.registry.resolve(url));
+      const ref = await this.registry.resolve(url);
+      this.assertSupported(ref);
+      refs.push(ref);
     }
 
     const job = await this.jobs.save(
@@ -72,6 +75,14 @@ export class ImportsService {
     const job = await this.jobs.findOne({ where: { id, userId } });
     if (!job) throw new NotFoundException('没有找到这个导入任务。');
     return this.serialize(job);
+  }
+
+  private assertSupported(ref: ParsedRef): void {
+    if (ref.platform !== 'netease' && ref.platform !== 'qq') {
+      throw new BadRequestException(
+        '目前只支持 QQ 音乐和网易云音乐之间的迁移。',
+      );
+    }
   }
 
   private async run(

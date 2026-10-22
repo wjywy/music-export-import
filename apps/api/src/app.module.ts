@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { join } from 'node:path';
+import { AccountsModule } from './accounts/accounts.module';
 import { AppleModule } from './apple/apple.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
@@ -48,6 +49,7 @@ export function databaseOptions(config: ConfigService): TypeOrmModuleOptions {
     ImportsModule,
     SharesModule,
     AppleModule,
+    AccountsModule,
     HealthModule,
   ],
 })

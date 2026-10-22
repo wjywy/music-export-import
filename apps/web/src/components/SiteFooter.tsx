@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { FerryMark } from './Wordmark';
+import { useAuth } from '../context/AuthContext';
 
 export function SiteFooter() {
+  const { user } = useAuth();
   return (
     <footer className="site-footer">
       <div className="footer-inner">
@@ -10,13 +12,11 @@ export function SiteFooter() {
             <FerryMark size={24} />
             <span className="brand-cn">渡口</span>
           </Link>
-          <p>把歌单从一处渡到另一处。五平台互通，逐首核对。</p>
+          <p>在 QQ 音乐和网易云音乐之间迁移歌单。</p>
           <div className="footer-links">
-            <Link to="/s/demo">示例歌单</Link>
-            <span aria-hidden="true">·</span>
             <Link to="/app/import">导入</Link>
             <span aria-hidden="true">·</span>
-            <Link to="/app/settings">平台接入</Link>
+            <Link to={user ? '/app' : '/login'}>{user ? '歌单' : '登录'}</Link>
           </div>
         </div>
         <div className="footer-colophon">

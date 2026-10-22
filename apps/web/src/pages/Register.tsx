@@ -75,7 +75,6 @@ export function Register() {
               onChange={(event) => setPassword(event.target.value)}
               placeholder="至少 8 位"
             />
-            <span className="field-hint">密码会加盐哈希后保存，不会明文存储。</span>
           </label>
           {error ? <div className="form-error">{error}</div> : null}
           <button className="btn btn-primary btn-block" type="submit" disabled={pending}>

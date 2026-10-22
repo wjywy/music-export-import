@@ -221,3 +221,37 @@ export interface KuwoSessionStatus {
   refreshedAt: string | null;
   autoRefreshSeconds: number;
 }
+
+export type TransferTarget = 'qq' | 'netease';
+export type AccountPlatform = 'netease' | 'qq';
+
+export interface AccountStatus {
+  platform: AccountPlatform;
+  connected: boolean;
+  nickname: string | null;
+  connectedAt: string | null;
+}
+
+export interface AccountQr {
+  platform: AccountPlatform;
+  key: string;
+  image: string;
+  url?: string | null;
+  expiresAt: string;
+}
+
+export interface AccountQrStatus {
+  status: 'waiting' | 'scanned' | 'authorized' | 'expired';
+  nickname?: string | null;
+  message?: string | null;
+}
+
+export interface AccountPushResult {
+  platform: AccountPlatform;
+  playlistId: string;
+  name: string;
+  url: string;
+  added: number;
+  skipped: number;
+  failed: number;
+}

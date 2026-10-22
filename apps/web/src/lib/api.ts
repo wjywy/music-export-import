@@ -1,24 +1,14 @@
 import type {
-  ApplePushResult,
-  AppleStatus,
+  AccountPlatform,
+  AccountPushResult,
+  AccountQr,
+  AccountQrStatus,
+  AccountStatus,
   AuthResult,
-  DedupeResult,
-  Delivery,
   ImportJob,
-  KuwoSessionStatus,
-  MergeResult,
-  Platform,
-  PlatformInfo,
   PlaylistDetail,
   PlaylistSummary,
-  PublicShare,
-  SearchHit,
-  Share,
-  SharePermission,
-  Stats,
-  TrackAlias,
   User,
-  Visibility,
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
@@ -107,10 +97,11 @@ function jsonBody(value: unknown): BodyInit {
 
 export const api = {
   register: (email: string, password: string, displayName: string) =>
-    request<AuthResult>(
-      '/auth/register',
-      { method: 'POST', body: jsonBody({ email, password, displayName }), auth: false },
-    ),
+    request<AuthResult>('/auth/register', {
+      method: 'POST',
+      body: jsonBody({ email, password, displayName }),
+      auth: false,
+    }),
   login: (email: string, password: string) =>
     request<AuthResult>('/auth/login', {
       method: 'POST',
@@ -119,175 +110,35 @@ export const api = {
     }),
   me: () => request<User>('/auth/me'),
 
-  platforms: () =>
-    request<{ platforms: PlatformInfo[]; handlesWrite: boolean; note: string }>(
-      '/platforms',
-      { auth: false },
-    ),
-  resolve: (url: string) =>
-    request<{ platform: Platform; kind: string; id: string; url: string; name: string }>(
-      '/platforms/resolve',
-      { method: 'POST', body: jsonBody({ url }) },
-    ),
-
   playlists: () => request<PlaylistSummary[]>('/playlists'),
-  stats: () => request<Stats>('/playlists/stats'),
   playlist: (id: string) => request<PlaylistDetail>(`/playlists/${id}`),
-  createPlaylist: (input: {
-    title: string;
-    description?: string | null;
-    visibility?: Visibility;
-    items?: { title: string; artist?: string; album?: string | null }[];
-  }) =>
-    request<PlaylistSummary>('/playlists', {
-      method: 'POST',
-      body: jsonBody(input),
-    }),
-  updatePlaylist: (
-    id: string,
-    input: { title?: string; description?: string | null; visibility?: Visibility },
-  ) =>
-    request<PlaylistDetail>(`/playlists/${id}`, {
-      method: 'PATCH',
-      body: jsonBody(input),
-    }),
   deletePlaylist: (id: string) =>
     request<{ ok: boolean }>(`/playlists/${id}`, { method: 'DELETE' }),
-  match: (id: string, platform: Platform, threshold?: number) =>
-    request<{ platform: Platform; total: number; matched: number; message: string }>(
-      `/playlists/${id}/match`,
-      {
-        method: 'POST',
-        body: jsonBody({ platform, ...(threshold ? { threshold } : {}) }),
-        timeoutMs: 180_000,
-      },
-    ),
-  clearMatches: (id: string, platform?: Platform) =>
-    request<{ removed: number }>(
-      `/playlists/${id}/matches${platform ? `?platform=${platform}` : ''}`,
-      { method: 'DELETE' },
-    ),
-  delivery: (id: string, platform: Platform) =>
-    request<Delivery>(`/playlists/${id}/delivery?platform=${platform}`),
 
-  shares: () => request<Share[]>('/shares'),
-  createShare: (
-    playlistId: string,
-    permission: SharePermission,
-    expiresInDays?: number,
-  ) =>
-    request<Share>('/shares', {
-      method: 'POST',
-      body: jsonBody({ playlistId, permission, expiresInDays }),
-    }),
-  revokeShare: (id: string) =>
-    request<{ ok: boolean }>(`/shares/${id}`, { method: 'DELETE' }),
-
-  imports: () => request<ImportJob[]>('/imports'),
-  importJob: (id: string) => request<ImportJob>(`/imports/${id}`),
-  createImport: (url: string, targetPlatform?: Platform) =>
+  createImport: (url: string) =>
     request<ImportJob>('/imports', {
       method: 'POST',
-      body: jsonBody({ url, ...(targetPlatform ? { targetPlatform } : {}) }),
+      body: jsonBody({ url }),
       timeoutMs: 60_000,
     }),
-  createBatchImport: (
-    urls: string[],
-    targetPlatform?: Platform,
-    title?: string,
-  ) =>
-    request<ImportJob>('/imports/batch', {
-      method: 'POST',
-      body: jsonBody({
-        urls,
-        ...(targetPlatform ? { targetPlatform } : {}),
-        ...(title ? { title } : {}),
-      }),
-      timeoutMs: 60_000,
-    }),
+  importJob: (id: string) => request<ImportJob>(`/imports/${id}`),
 
-  searchPlatform: (platform: Platform, query: string) =>
-    request<{ platform: Platform; query: string; hits: SearchHit[] }>(
-      '/platforms/search',
-      { method: 'POST', body: jsonBody({ platform, query, limit: 8 }) },
-    ),
-  assignMatch: (
-    playlistId: string,
-    itemId: string,
-    input: {
-      platform: Platform;
-      remoteId?: string | null;
-      remoteTitle: string;
-      remoteArtist?: string;
-      remoteAlbum?: string | null;
-      remoteUrl?: string | null;
-      remember?: boolean;
-    },
-  ) =>
-    request<{ matched: boolean; aliasSaved: boolean; remoteTitle: string }>(
-      `/playlists/${playlistId}/items/${itemId}/match`,
-      { method: 'POST', body: jsonBody(input) },
-    ),
-  kuwoSession: () => request<KuwoSessionStatus>('/platforms/kuwo/session'),
-  refreshKuwoSession: () =>
-    request<KuwoSessionStatus>('/platforms/kuwo/session/refresh', {
+  accounts: () => request<{ accounts: AccountStatus[] }>('/accounts'),
+  startAccountQr: (platform: AccountPlatform) =>
+    request<AccountQr>(`/accounts/${platform}/qr`, {
       method: 'POST',
+      timeoutMs: 45_000,
     }),
-  aliases: () => request<TrackAlias[]>('/aliases'),
-  deleteAlias: (id: string) =>
-    request<{ ok: boolean }>(`/aliases/${id}`, { method: 'DELETE' }),
-  mergePlaylists: (playlistIds: string[], title?: string) =>
-    request<MergeResult>('/playlists/merge', {
+  checkAccountQr: (platform: AccountPlatform, key: string) =>
+    request<AccountQrStatus>(`/accounts/${platform}/qr/${encodeURIComponent(key)}`, {
+      timeoutMs: 20_000,
+    }),
+  disconnectAccount: (platform: AccountPlatform) =>
+    request<{ ok: boolean }>(`/accounts/${platform}`, { method: 'DELETE' }),
+  pushPlaylist: (playlistId: string, platform: AccountPlatform) =>
+    request<AccountPushResult>(`/playlists/${playlistId}/push`, {
       method: 'POST',
-      body: jsonBody({ playlistIds, ...(title ? { title } : {}) }),
+      body: jsonBody({ platform }),
+      timeoutMs: 240_000,
     }),
-  dedupePlaylist: (id: string) =>
-    request<DedupeResult>(`/playlists/${id}/dedupe`, { method: 'POST' }),
-
-  appleConfig: () => request<AppleStatus>('/platforms/apple/config'),
-  appleAuthorize: (musicUserToken: string) =>
-    request<AppleStatus>('/platforms/apple/authorize', {
-      method: 'POST',
-      body: jsonBody({ musicUserToken }),
-    }),
-  appleDisconnect: () =>
-    request<{ ok: boolean }>('/platforms/apple/authorize', { method: 'DELETE' }),
-  applePushPlaylist: (playlistId: string) =>
-    request<ApplePushResult>(`/platforms/apple/playlists/${playlistId}/push`, {
-      method: 'POST',
-      timeoutMs: 60_000,
-    }),
-
-  publicShare: (token: string) =>
-    request<PublicShare>(`/share/${token}`, { auth: false }),
-  cloneShare: (token: string) =>
-    request<{ playlistId: string; title: string; itemCount: number }>(
-      `/share/${token}/clone`,
-      { method: 'POST' },
-    ),
-
-  async download(path: string, fallbackName: string): Promise<void> {
-    const headers: Record<string, string> = {};
-    const token = getToken();
-    if (token) headers.authorization = `Bearer ${token}`;
-    const response = await fetch(`${API_BASE}${path}`, {
-      headers,
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!response.ok) {
-      throw new ApiError('导出失败，请稍后再试。', response.status);
-    }
-    const blob = await response.blob();
-    const disposition = response.headers.get('content-disposition') ?? '';
-    const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-    const filename = encoded ? decodeURIComponent(encoded) : fallbackName;
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = objectUrl;
-    anchor.download = filename;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(objectUrl);
-  },
 };

@@ -6,7 +6,6 @@ import { Wordmark } from './Wordmark';
 const NAV = [
   { to: '/app', label: '歌单', end: true },
   { to: '/app/import', label: '导入', end: false },
-  { to: '/app/settings', label: '设置', end: false },
 ];
 
 export function SiteHeader() {
@@ -36,11 +35,7 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))
-          ) : (
-            <Link to="/s/demo" className="nav-link">
-              示例歌单
-            </Link>
-          )}
+          ) : null}
         </div>
         <div className="nav-right">
           {user ? (

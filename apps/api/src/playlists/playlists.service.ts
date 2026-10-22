@@ -25,6 +25,12 @@ import {
   UpdatePlaylistDto,
 } from './dto';
 
+import {
+  buildTransferPlan,
+  TransferTarget,
+  TransferTextFormat,
+} from './transfer';
+
 export type ExportFormat = 'csv' | 'txt' | 'json';
 
 export interface PlaylistDetail {
@@ -433,6 +439,9 @@ export class PlaylistsService {
     platform: Platform,
     threshold = 0.7,
   ): Promise<{ platform: Platform; total: number; matched: number; message: string }> {
+    if (platform !== 'netease' && platform !== 'qq') {
+      throw new BadRequestException('目前只支持 QQ 音乐和网易云音乐。');
+    }
     await this.getEntity(id, userId);
     await this.matcher.probe(platform);
 
@@ -628,6 +637,41 @@ export class PlaylistsService {
       ready: rows.filter((row) => row.status === 'ready').length,
       rows,
     };
+  }
+
+  async transfer(
+    id: string,
+    userId: string,
+    target: TransferTarget,
+    format: TransferTextFormat = 'song-singer',
+    chunkChars?: number,
+  ) {
+    const detail = await this.getDetail(id, userId);
+    if (detail.items.length === 0) {
+      throw new BadRequestException('这张歌单还没有曲目，无法迁移。');
+    }
+    const tracks = detail.items.map((item) => {
+      const match = item.matches.find(
+        (entry) => entry.platform === target && entry.status === 'matched',
+      );
+      return {
+        title: item.title,
+        artist: item.artist,
+        matched: Boolean(match),
+        matchedTitle: match?.remoteTitle ?? null,
+        matchedArtist: match?.remoteArtist ?? null,
+      };
+    });
+
+    return buildTransferPlan({
+      target,
+      title: detail.title,
+      sourcePlatform: detail.sourcePlatform,
+      sourceUrl: detail.sourceUrl,
+      tracks,
+      format,
+      chunkChars,
+    });
   }
 
   async export(

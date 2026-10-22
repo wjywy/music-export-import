@@ -136,7 +136,9 @@ export class QQAdapter implements PlatformAdapter {
       `https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp?w=${encodeURIComponent(query)}&format=json&n=${limit}&p=1&remoteplace=txt.yqq.song&t=0&aggr=1&cr=1&catZhida=1&lossless=0&flag_qc=0&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0`,
       { headers: this.headers() },
     );
-    return (response.data?.song?.list ?? []).map((song) => this.toTrack(song));
+    return (response.data?.song?.list ?? [])
+      .map((song) => this.toTrack(song))
+      .filter((track) => Boolean(track.sourceId));
   }
 
   searchUrl(query: string): string {
@@ -145,13 +147,14 @@ export class QQAdapter implements PlatformAdapter {
 
   private toTrack(song: QQSong): RemoteTrack {
     const mid = song.mid ?? song.songmid ?? null;
+    const validMid = mid && mid !== '0' ? mid : null;
     return {
       title: song.title ?? song.name ?? song.songname ?? '未知曲目',
       artist: (song.singer ?? []).map((s) => s.name).filter(Boolean).join(' / '),
       album: song.album?.name ?? song.album?.title ?? song.albumname ?? null,
       durationMs: song.interval ? song.interval * 1000 : null,
-      sourceUrl: mid ? `https://y.qq.com/n/ryqq/songDetail/${mid}` : null,
-      sourceId: mid,
+      sourceUrl: validMid ? `https://y.qq.com/n/ryqq/songDetail/${validMid}` : null,
+      sourceId: validMid,
     };
   }
 }
