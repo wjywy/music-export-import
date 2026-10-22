@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>工具 · A2A Tools</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A2A 公共工具目录。独立、简单、打开就用的小工具，包括渡口歌单迁移。">
+<meta name="theme-color" content="#f5f4ed">
+<meta property="og:title" content="工具 · A2A Tools">
+<meta property="og:description" content="独立、简单、打开就用的小工具。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://a2a-platform.com/tool/">
+<link rel="canonical" href="https://a2a-platform.com/tool/">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body id="top">
+
+<a class="skip-link" href="#tools">跳到工具目录</a>
+
+<header class="site-header">
+  <div class="nav">
+    <a class="brand" href="/" aria-label="A2A 首页">
+      <span class="brand-seal" aria-hidden="true">A</span>
+      <span class="brand-cn">工具</span>
+      <span class="brand-en">Tools</span>
+    </a>
+    <nav class="nav-links" aria-label="主导航">
+      <a href="#tools" aria-current="page">目录</a>
+      <a class="nav-home" href="/">返回首页</a>
+    </nav>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- ============ Hero ============ -->
+  <header class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">PUBLIC TOOLS · 公共工具目录</p>
+      <h1>工具<span class="h1-dot">。</span></h1>
+      <p class="tagline">把一件小事做好，然后离开。</p>
+      <p class="lede">
+        这里放一些独立的小工具。无需安装，打开就用；
+        一个工具只解决一件事。
+      </p>
+      <div class="hero-tokens">
+        <span><b id="hero-count">01</b> 已上线</span>
+        <span>浏览器内运行</span>
+        <span>持续添加</span>
+      </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="/tool/music/">
+          打开渡口 <span aria-hidden="true">→</span>
+        </a>
+        <a class="btn btn-ghost" href="#tools">浏览目录</a>
+      </div>
+    </div>
+
+    <aside class="hero-aside" aria-label="目录说明">
+      <p>不追热点，只做顺手的事。</p>
+      <span class="aside-rule" aria-hidden="true"></span>
+      <p class="aside-meta">2026 · 秋</p>
+    </aside>
+  </header>
+
+  <!-- ============ 01 · 目录 ============ -->
+  <section id="tools" class="section">
+    <div class="section-head">
+      <p class="eyebrow">01 / DIRECTORY</p>
+      <div class="section-title-row">
+        <h2>全部工具</h2>
+        <span class="count" id="tool-count">1 个</span>
+      </div>
+      <p class="section-lede">按用途排列。一个新工具上线时，它会出现在这里。</p>
+    </div>
+
+    <div class="toolbar">
+      <label class="search">
+        <span class="sr-only">搜索工具</span>
+        <input
+          id="tool-search"
+          type="search"
+          placeholder="搜索工具、用途或关键词…"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <kbd>/</kbd>
+      </label>
+      <div class="filters" id="tool-filters" role="group" aria-label="按分类筛选">
+        <button class="filter is-active" type="button" data-filter="all" aria-pressed="true">全部</button>
+        <button class="filter" type="button" data-filter="music" aria-pressed="false">音乐</button>
+      </div>
+    </div>
+
+    <div class="tool-grid" id="tool-grid">
+      <a
+        class="tool-card"
+        href="/tool/music/"
+        data-category="music"
+        data-search="渡口 dukou 音乐 歌单 迁移 歌单搬家 qq 音乐 网易云音乐 apple music soundiiz tunemymusic"
+      >
+        <span class="card-top">
+          <span class="card-index">01</span>
+          <span class="status">可用</span>
+        </span>
+        <span class="card-mark" aria-hidden="true">渡</span>
+        <span class="card-title-row">
+          <span class="card-title">渡口</span>
+          <span class="card-en">Dukou</span>
+        </span>
+        <span class="card-desc">
+          把 QQ 音乐、网易云音乐的歌单迁到另一个平台；
+          也支持通过 Soundiiz / TuneMyMusic 写入 Apple Music。
+        </span>
+        <span class="card-tags">
+          <span>音乐</span>
+          <span>歌单迁移</span>
+          <span>Apple Music</span>
+        </span>
+        <span class="card-foot">
+          打开渡口 <span aria-hidden="true">↗</span>
+        </span>
+      </a>
+
+      <div class="tool-card tool-card--soon" data-category="all" data-search="">
+        <span class="card-top">
+          <span class="card-index">02</span>
+          <span class="status status--quiet">准备中</span>
+        </span>
+        <span class="card-mark" aria-hidden="true">＋</span>
+        <span class="card-title-row">
+          <span class="card-title">下一件工具</span>
+          <span class="card-en">Coming next</span>
+        </span>
+        <span class="card-desc">
+          还在整理。它应该解决一个具体的小问题，
+          而不是再多一个入口。
+        </span>
+        <span class="card-foot card-foot--quiet">还在整理</span>
+      </div>
+    </div>
+
+    <p class="empty" id="tool-empty" role="status" hidden>
+      没有找到匹配的工具。换个关键词试试。
+    </p>
+  </section>
+
+  <!-- ============ Footer ============ -->
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <a class="brand" href="/" aria-label="A2A 首页">
+        <span class="brand-seal" aria-hidden="true">A</span>
+        <span class="brand-cn">工具</span>
+        <span class="brand-en">Tools</span>
+      </a>
+      <p>公共工具目录。每一件都尽量简单。</p>
+    </div>
+    <div class="footer-meta">
+      <p class="footer-links">
+        <a href="#tools">目录</a>
+        <span aria-hidden="true">·</span>
+        <a href="/tool/music/">渡口</a>
+        <span aria-hidden="true">·</span>
+        <a href="#top">回到顶部</a>
+      </p>
+      <p class="footer-year">© 2026 A2A</p>
+    </div>
+  </footer>
+
+</main>
+
+<script src="./tools.js"></script>
+</body>
+</html>

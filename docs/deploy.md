@@ -6,6 +6,8 @@
 https://a2a-platform.com/tool/music/
 ```
 
+公共工具入口 `/tool/` 是独立静态页，文件和反代顺序见 [tool/README.md](../tool/README.md)；它不能覆盖 `/tool/music/`。
+
 架构：
 
 ```text
