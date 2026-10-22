@@ -112,20 +112,28 @@ export function ImportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectOpen, qr, url, queryClient]);
 
-  function onSubmit(event: FormEvent) {
+  async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const value = url.trim();
     if (!value) return;
-    if (
-      detected === 'netease' &&
-      netease &&
-      !netease.connected &&
-      !forcePartial
-    ) {
-      setConnectOpen(true);
-      setConnectError(null);
-      if (!qr) void startQr();
-      return;
+    if (detected === 'netease' && !forcePartial) {
+      let connected = netease?.connected ?? false;
+      if (!accounts.isFetched || !netease) {
+        try {
+          const refreshed = await accounts.refetch();
+          connected =
+            refreshed.data?.accounts.find((entry) => entry.platform === 'netease')
+              ?.connected ?? false;
+        } catch {
+          connected = false;
+        }
+      }
+      if (!connected) {
+        setConnectOpen(true);
+        setConnectError(null);
+        if (!qr) void startQr();
+        return;
+      }
     }
     setJobId(null);
     create.mutate(value);
