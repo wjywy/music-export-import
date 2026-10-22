@@ -297,14 +297,16 @@ docker run --rm -v dukou-mysql-prod:/data -v "$PWD/backups":/backup alpine \
 - `scripts/backup-mysql.sh` 在运行中的生产栈上生成并校验了逻辑备份；
 - 单元测试 6 项、Nest e2e 11 项、Playwright 6 项全部通过；
 - 真实读取 QQ 音乐（30 首）、酷狗（37 首）、酷我（20 首，免 Cookie）、网易云（匿名 10/30 首并给出限制提示）；
-- 手工指定匹配 → 记住映射 → 重跑匹配命中 alias；批量合并两张歌单、去重、CSV 导出、分享克隆均通过；
+- 手工指定匹配 → 记住映射 → 重跑匹配命中 alias；浏览器里完成一次「指定」：搜索 QQ 音乐、选中版本、行状态变为「手动 100%」；
+- 批量合并两张歌单、去重、CSV 导出、分享克隆均通过；
 - 浏览器端登录、批量导入切换、设置页、注册后保存分享、创建歌单均通过 Playwright。
 
 **未验证**：
 
 - Apple Music 的 MusicKit 授权与资料库写入：本机没有 Apple Developer 开发者令牌与订阅账号，只能验证未配置时的错误提示与配置接口；
 - 真实公网域名的 TLS、域名与安全组未部署（生产 compose 与 nginx 已在本机验证）；
-- Playwright 的批量导入与人工指定仍依赖外部平台网络，未纳入自动 UI 用例（对应后端 e2e 已覆盖）。
+- Playwright 的批量导入与人工指定仍依赖外部平台网络，未纳入自动 UI 用例（人工指定已手动走通，后端 e2e 覆盖了映射接口）；
+- GitHub Actions workflow 已提交，但尚未在 GitHub 上实际触发一次。
 
 ## 后续计划
 

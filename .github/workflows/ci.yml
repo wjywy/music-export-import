@@ -69,8 +69,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Install Playwright Chrome
-        run: pnpm exec playwright install --with-deps chrome
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Playwright UI tests
         run: pnpm test:ui
