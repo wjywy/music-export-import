@@ -8,6 +8,7 @@ import { PLATFORM_META, Platform } from '../common/platforms';
 import { ParsedRef, PlatformAdapter } from '../platforms/adapter.interface';
 import { PlatformRegistry } from '../platforms/registry.service';
 import { PlaylistsService } from '../playlists/playlists.service';
+import { NeteaseAccountService } from '../accounts/netease-account.service';
 import { BatchImportDto, CreateImportDto } from './dto';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class ImportsService {
     private readonly jobs: Repository<ImportJob>,
     private readonly registry: PlatformRegistry,
     private readonly playlists: PlaylistsService,
+    private readonly netease: NeteaseAccountService,
   ) {}
 
   async create(userId: string, dto: CreateImportDto) {
@@ -98,7 +100,11 @@ export class ImportsService {
         progress: 10,
         message: `正在读取${PLATFORM_META[ref.platform].name}歌单…`,
       });
-      const remote = await this.registry.get(ref.platform).fetchPlaylist(ref);
+      const cookie =
+        ref.platform === 'netease' ? await this.netease.cookieFor(userId) : null;
+      const remote = await this.registry
+        .get(ref.platform)
+        .fetchPlaylist(ref, cookie ? { cookie } : undefined);
       const deduped = dedupeTracks(remote.tracks);
       remote.tracks = deduped.tracks;
       const total = remote.tracks.length;
@@ -177,7 +183,11 @@ export class ImportsService {
           message: `正在读取第 ${index + 1} / ${refs.length} 张歌单…`,
         });
         try {
-          const remote = await this.registry.get(ref.platform).fetchPlaylist(ref);
+          const cookie =
+            ref.platform === 'netease' ? await this.netease.cookieFor(userId) : null;
+          const remote = await this.registry
+            .get(ref.platform)
+            .fetchPlaylist(ref, cookie ? { cookie } : undefined);
           remotes.push({ remote, ref });
         } catch (error) {
           failures.push(`${PLATFORM_META[ref.platform].name}：${describeError(error)}`);

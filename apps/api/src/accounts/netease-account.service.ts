@@ -62,6 +62,14 @@ export class NeteaseAccountService {
     private readonly cipher: CredentialCipher,
   ) {}
 
+  async cookieFor(userId: string): Promise<string | null> {
+    try {
+      return (await this.readSession(userId)).cookie;
+    } catch {
+      return null;
+    }
+  }
+
   async status(userId: string): Promise<AccountStatus> {
     const row = await this.credentials.findOne({
       where: { userId, platform: 'netease' },

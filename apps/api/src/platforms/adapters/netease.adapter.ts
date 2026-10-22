@@ -3,6 +3,7 @@ import { PLATFORM_META } from '../../common/platforms';
 import { PlatformError } from '../../common/platform-error';
 import { fetchJson } from '../http';
 import {
+  FetchPlaylistOptions,
   ParsedRef,
   PlatformAdapter,
   RemotePlaylist,
@@ -51,6 +52,12 @@ interface NeteaseApiModule {
     limit: number;
     cookie?: string;
   }) => Promise<{ status: number; body: NeteaseSearch }>;
+  playlist_track_all: (params: {
+    id: string;
+    limit: number;
+    offset: number;
+    cookie?: string;
+  }) => Promise<{ status: number; body: NeteaseSongs }>;
 }
 
 // NeteaseCloudMusicApi is a CommonJS package without TypeScript declarations.
@@ -89,8 +96,11 @@ export class NeteaseAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchPlaylist(ref: ParsedRef): Promise<RemotePlaylist> {
-    const cookie = process.env.NETEASE_COOKIE?.trim();
+  async fetchPlaylist(
+    ref: ParsedRef,
+    options?: FetchPlaylistOptions,
+  ): Promise<RemotePlaylist> {
+    const cookie = options?.cookie?.trim() || process.env.NETEASE_COOKIE?.trim();
     const headers: Record<string, string> = {
       referer: 'https://music.163.com/',
       ...(cookie ? { cookie } : {}),
@@ -115,9 +125,24 @@ export class NeteaseAdapter implements PlatformAdapter {
     }
 
     const declared = detail.playlist.trackCount ?? songs.length;
+    if (declared > songs.length && cookie) {
+      try {
+        const all = await neteaseApi.playlist_track_all({
+          id: ref.id,
+          limit: 1000,
+          offset: 0,
+          cookie,
+        });
+        if (all.body?.code === 200 && all.body.songs?.length) {
+          songs = all.body.songs;
+        }
+      } catch {
+        // Keep the partial list and warn below.
+      }
+    }
     const warning =
       declared > songs.length
-        ? `平台只返回了前 ${songs.length} 首（共 ${declared} 首）。配置 NETEASE_COOKIE 后可读取完整歌单。`
+        ? `平台只返回了前 ${songs.length} 首（共 ${declared} 首）。连接网易云或配置 NETEASE_COOKIE 后可读取完整歌单。`
         : undefined;
 
     return {

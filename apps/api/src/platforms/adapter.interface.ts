@@ -33,11 +33,16 @@ export interface SearchHit extends RemoteTrack {
   externalScore?: number;
 }
 
+export interface FetchPlaylistOptions {
+  /** Per-user platform session cookie, used when available. */
+  cookie?: string;
+}
+
 export interface PlatformAdapter {
   readonly platform: Platform;
   readonly meta: PlatformMeta;
   parse(url: string): ParsedRef | null;
-  fetchPlaylist(ref: ParsedRef): Promise<RemotePlaylist>;
+  fetchPlaylist(ref: ParsedRef, options?: FetchPlaylistOptions): Promise<RemotePlaylist>;
   search(query: string, limit: number): Promise<SearchHit[]>;
   searchUrl(query: string): string;
 }

@@ -19,5 +19,6 @@ import { QqAccountService } from './qq-account.service';
   ],
   controllers: [AccountsController, PushController],
   providers: [AccountsService, NeteaseAccountService, QqAccountService, CredentialCipher],
+  exports: [NeteaseAccountService],
 })
 export class AccountsModule {}

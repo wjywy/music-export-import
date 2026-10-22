@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { AccountsModule } from '../accounts/accounts.module';
 import { ImportJob } from '../common/entities/import-job.entity';
 import { PlatformsModule } from '../platforms/platforms.module';
 import { PlaylistsModule } from '../playlists/playlists.module';
@@ -13,6 +14,7 @@ import { ImportsService } from './imports.service';
     PlatformsModule,
     PlaylistsModule,
     AuthModule,
+    AccountsModule,
   ],
   controllers: [ImportsController],
   providers: [ImportsService],
