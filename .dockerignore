@@ -1,5 +1,6 @@
 node_modules
 **/node_modules
+.pnpm-store
 dist
 **/dist
 .git
@@ -8,8 +9,13 @@ docs
 backups
 test-results
 playwright-report
+coverage
+apps/api/data
+*.sqlite
+*.sqlite3
 .env
 .env.*
 !.env.example
 !.env.production.example
 *.log
+.DS_Store

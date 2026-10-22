@@ -21,6 +21,12 @@
 
 写入使用平台非公开接口，可能受风控或改版影响；失败不会改动你已有的歌单。
 
+## 部署
+
+推荐阿里云 ECS + Docker Compose + Caddy 自动 HTTPS，完整步骤见 [docs/deploy.md](docs/deploy.md)。
+
+Vercel 只能托管前端；API、MySQL、扫码会话仍需放在阿里云。GitHub Actions 用于 CI 和手动部署到 ECS。
+
 ## 技术栈
 
 | 层 | 选择 |
