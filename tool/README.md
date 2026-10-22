@@ -6,7 +6,7 @@ Kami 纸张体系的公共工具目录。纯静态 HTML / CSS / JS，无构建�
 
 | 文件 | 作用 |
 | --- | --- |
-| `index.html` | 入口页：介绍、搜索、工具卡片、原则、页脚 |
+| `index.html` | 入口页：介绍、搜索、工具卡片、页脚 |
 | `styles.css` | Kami tokens 与页面样式 |
 | `tools.js` | 搜索、分类筛选、`/` 快捷键 |
 | `preview-server.mjs` | 本地同时预览 `/tool/` 与 `/tool/music/` |
@@ -35,51 +35,19 @@ node tool/preview-server.mjs
 
 ## 部署
 
-目标地址：`https://a2a-platform.com/tool/`
+`tool/` 已经打进渡口 web 镜像的 `/usr/share/nginx/html/tool/`，不需要单独准备静态目录。部署时重建 web 容器即可：
 
-把整个 `tool/` 目录放到站点静态目录，并确保 `/tool/music/` 仍然优先反代到渡口。
-
-### nginx
-
-```nginx
-location /tool/music/ {
-    proxy_pass http://127.0.0.1:8090/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 300s;
-    proxy_send_timeout 300s;
-}
-
-location = /tool {
-    return 301 /tool/;
-}
-
-location /tool/ {
-    alias /srv/tool/;
-    try_files $uri $uri/ /tool/index.html;
-}
+```bash
+cd /home/admin/dukou
+git pull --ff-only
+sudo docker compose -p dukou -f docker-compose.prod.yml --env-file .env.production up -d --build
 ```
 
-nginx 会按最长前缀匹配，`/tool/music/` 会优先于 `/tool/`。
+Caddy / nginx 的反代配置（`/tool/` 工具入口 + `/tool/music/` 渡口）见 [docs/deploy.md](../docs/deploy.md)。核心是：
 
-### Caddy
-
-```caddyfile
-redir /tool /tool/ 308
-
-handle /tool/music/* {
-    reverse_proxy 127.0.0.1:8090
-}
-
-handle /tool/* {
-    root * /srv/tool
-    try_files {path} /index.html
-    file_server
-}
-```
+- `/tool/` 原样转发到 web 容器；
+- `/tool/music/` 去掉 `/tool/music` 前缀后再转发；
+- 两个 location / handle 都要保留。
 
 ## 新增工具
 

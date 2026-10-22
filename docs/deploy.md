@@ -84,9 +84,16 @@ curl http://127.0.0.1:8090/api/health
 配置文件在 `/home/admin/caddy/Caddyfile`，是挂进 `caddy` 容器的。在 `a2a-platform.com { ... }` 里、默认 `handle` 之前加：
 
 ```caddyfile
+  redir /tool /tool/ 308
   redir /tool/music /tool/music/ 308
 
+  # 渡口：去掉 /tool/music 前缀后交给容器里的 nginx
   handle_path /tool/music/* {
+    reverse_proxy 127.0.0.1:8090
+  }
+
+  # /tool/ 工具入口：静态文件已经打进 web 镜像的 /tool/
+  handle /tool/* {
     reverse_proxy 127.0.0.1:8090
   }
 ```
@@ -104,8 +111,22 @@ sudo docker exec caddy caddy reload \
 在 `a2a-platform.com` 的 `server { ... }` 里加：
 
 ```nginx
+location = /tool {
+    return 301 /tool/;
+}
+
 location = /tool/music {
     return 301 /tool/music/;
+}
+
+# 工具入口：web 容器里的 /tool/
+location /tool/ {
+    proxy_pass http://127.0.0.1:8090;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 
 location /tool/music/ {
@@ -130,10 +151,13 @@ sudo systemctl reload nginx
 ## 四、验证
 
 ```bash
+curl -I https://a2a-platform.com/tool/
 curl -I https://a2a-platform.com/tool/music/
 curl -fsS https://a2a-platform.com/tool/music/api/health
 ```
 
+- `/tool/` 返回 200，且能看到渡口卡片；
+- `/tool/tools.js` 返回 200；
 - `/tool/music/` 返回 200；
 - `/tool/music/api/health` 返回 `{"ok":true,...}`；
 - 直接刷新 `/tool/music/app` 不 404；

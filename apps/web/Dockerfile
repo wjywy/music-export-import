@@ -16,4 +16,6 @@ RUN pnpm --filter @dukou/web build
 FROM nginx:1.27-alpine
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
+COPY tool /usr/share/nginx/html/tool
+RUN chmod -R a+rX /usr/share/nginx/html/tool
 EXPOSE 80
