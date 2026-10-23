@@ -34,7 +34,7 @@ QQ / 网易云写入使用平台非公开接口，可能受风控或改版影响
 
 完整步骤见 [docs/deploy.md](docs/deploy.md)；Apple Music 开发者账号、私钥与验收步骤见 [docs/apple-music.md](docs/apple-music.md)。
 
-`/tool/` 是公共工具目录入口，静态文件在 [tool/](tool/)，部署与新增工具说明见 [tool/README.md](tool/README.md)。
+`/tool/` 是公共工具目录入口，目前收录渡口与拾句，静态文件在 [tool/](tool/)，部署与新增工具说明见 [tool/README.md](tool/README.md)。
 
 ## 技术栈
 

@@ -60,10 +60,13 @@ function serveStatic(req, res) {
   }
 
   const relative = pathname.slice('/tool/'.length) || 'index.html';
-  const file = resolve(root, relative);
+  let file = resolve(root, relative);
   if (file !== root && !file.startsWith(root + sep)) {
     sendText(res, 403, 'Forbidden');
     return;
+  }
+  if (existsSync(file) && statSync(file).isDirectory()) {
+    file = resolve(file, 'index.html');
   }
   if (!existsSync(file) || !statSync(file).isFile()) {
     sendText(res, 404, 'Not found');

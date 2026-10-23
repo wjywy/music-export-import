@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>工具 · A2A Tools</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="A2A 公共工具目录。独立、简单、打开就用的小工具，包括渡口歌单迁移。">
+<meta name="description" content="A2A 公共工具目录。独立、简单、打开就用的小工具，包括渡口歌单迁移与拾句网页剪藏。">
 <meta name="theme-color" content="#f5f4ed">
 <meta property="og:title" content="工具 · A2A Tools">
 <meta property="og:description" content="独立、简单、打开就用的小工具。">
@@ -50,10 +50,10 @@
         <span>持续添加</span>
       </div>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="/tool/music/">
-          打开渡口 <span aria-hidden="true">→</span>
+        <a class="btn btn-primary" href="#tools">
+          浏览全部工具 <span aria-hidden="true">→</span>
         </a>
-        <a class="btn btn-ghost" href="#tools">浏览目录</a>
+        <a class="btn btn-ghost" href="/tool/music/">打开渡口</a>
       </div>
     </div>
 
@@ -90,6 +90,7 @@
       <div class="filters" id="tool-filters" role="group" aria-label="按分类筛选">
         <button class="filter is-active" type="button" data-filter="all" aria-pressed="true">全部</button>
         <button class="filter" type="button" data-filter="music" aria-pressed="false">音乐</button>
+        <button class="filter" type="button" data-filter="reading" aria-pressed="false">阅读</button>
       </div>
     </div>
 
@@ -123,22 +124,35 @@
         </span>
       </a>
 
-      <div class="tool-card tool-card--soon" data-category="all" data-search="">
+      <a
+        class="tool-card"
+        href="/tool/shiju/"
+        data-category="reading"
+        data-search="拾句 shiju 网页 剪藏 摘录 笔记 原文 语雀 飞书 阅读 标注 高亮"
+      >
         <span class="card-top">
           <span class="card-index">02</span>
-          <span class="status status--quiet">准备中</span>
+          <span class="status">可用</span>
         </span>
-        <span class="card-mark" aria-hidden="true">＋</span>
+        <span class="card-mark" aria-hidden="true">句</span>
         <span class="card-title-row">
-          <span class="card-title">下一件工具</span>
-          <span class="card-en">Coming next</span>
+          <span class="card-title">拾句</span>
+          <span class="card-en">Shiju</span>
         </span>
         <span class="card-desc">
-          还在整理。它应该解决一个具体的小问题，
-          而不是再多一个入口。
+          在网页上划选摘录，或把整篇文章收进本机；
+          补上笔记，再主动保存到语雀或飞书。
         </span>
-        <span class="card-foot card-foot--quiet">还在整理</span>
-      </div>
+        <span class="card-tags">
+          <span>阅读</span>
+          <span>网页剪藏</span>
+          <span>本机优先</span>
+        </span>
+        <span class="card-foot">
+          打开拾句 <span aria-hidden="true">↗</span>
+        </span>
+      </a>
+
     </div>
 
     <p class="empty" id="tool-empty" role="status" hidden>
@@ -161,6 +175,8 @@
         <a href="#tools">目录</a>
         <span aria-hidden="true">·</span>
         <a href="/tool/music/">渡口</a>
+        <span aria-hidden="true">·</span>
+        <a href="/tool/shiju/">拾句</a>
         <span aria-hidden="true">·</span>
         <a href="#top">回到顶部</a>
       </p>

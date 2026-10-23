@@ -2,6 +2,8 @@
 
 Kami 纸张体系的公共工具目录。纯静态 HTML / CSS / JS，无构建步骤，直接部署在 `/tool/`。
 
+当前工具：渡口 `/tool/music/`、拾句 `/tool/shiju/`。
+
 ## 文件
 
 | 文件 | 作用 |
