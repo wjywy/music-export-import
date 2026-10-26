@@ -338,6 +338,10 @@ export function TransferDialog({
   const total = data?.itemCount ?? 0;
   const matched = data?.matches[target] ?? 0;
   const needsMatch = Boolean(data && matched < total && data.sourcePlatform !== target);
+  const availableTargets =
+    sourcePlatform === 'apple'
+      ? TARGETS.filter((entry) => entry.value !== 'apple')
+      : TARGETS;
   const appleConfigured = Boolean(appleConfig.data?.configured);
   const appleAuthorized = Boolean(appleConfigured && appleConfig.data?.authorized);
   const appleOverLimit = isApple && total > 500;
@@ -362,7 +366,7 @@ export function TransferDialog({
       }
     >
       <div className="segment transfer-targets" role="group" aria-label="目标平台">
-        {TARGETS.map((entry) => (
+        {availableTargets.map((entry) => (
           <button
             key={entry.value}
             type="button"

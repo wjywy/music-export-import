@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PLATFORM_META } from '../../common/platforms';
 import { PlatformError } from '../../common/platform-error';
-import { fetchJson } from '../http';
+import { fetchJson, fetchText } from '../http';
 import {
   ParsedRef,
   PlatformAdapter,
@@ -53,6 +53,25 @@ interface AppleSearchResponse {
   results?: { songs?: { data?: { id?: string; attributes?: AppleSongAttributes }[] } };
 }
 
+interface AppleSerializedTrack {
+  title?: string;
+  artistName?: string;
+  duration?: number;
+  artwork?: { dictionary?: { url?: string } };
+  contentDescriptor?: {
+    kind?: string;
+    identifiers?: { storeAdamID?: string };
+    url?: string;
+  };
+}
+
+interface AppleLdPlaylist {
+  name?: string;
+  description?: string;
+  numTracks?: number;
+  author?: { name?: string };
+}
+
 @Injectable()
 export class AppleAdapter implements PlatformAdapter {
   readonly platform = 'apple' as const;
@@ -95,6 +114,107 @@ export class AppleAdapter implements PlatformAdapter {
   }
 
   async fetchPlaylist(ref: ParsedRef): Promise<RemotePlaylist> {
+    const publicPlaylist = await this.fetchPublicPlaylist(ref);
+    if (publicPlaylist) return publicPlaylist;
+    return this.fetchCatalogPlaylist(ref);
+  }
+
+  private async fetchPublicPlaylist(ref: ParsedRef): Promise<RemotePlaylist | null> {
+    let html: string;
+    try {
+      html = await fetchText(ref.url, {
+        headers: { referer: 'https://music.apple.com/' },
+        timeoutMs: 20_000,
+      });
+    } catch {
+      return null;
+    }
+
+    const serialized = html.match(
+      /<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/i,
+    )?.[1];
+    if (!serialized) return null;
+
+    let root: unknown;
+    try {
+      root = JSON.parse(serialized);
+    } catch {
+      return null;
+    }
+
+    const found: AppleSerializedTrack[] = [];
+    this.collectSerializedTracks(root, found);
+    const seen = new Set<string>();
+    const tracks: RemoteTrack[] = [];
+    for (const item of found) {
+      if (!item.title || !item.artistName) continue;
+      const sourceId = item.contentDescriptor?.identifiers?.storeAdamID;
+      const key = sourceId ?? `${item.title}|${item.artistName}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const artworkUrl = item.artwork?.dictionary?.url;
+      tracks.push({
+        title: item.title,
+        artist: item.artistName,
+        album: null,
+        durationMs: item.duration ?? null,
+        coverUrl: artworkUrl
+          ? artworkUrl.replace('{w}', '600').replace('{h}', '600')
+          : null,
+        sourceUrl: item.contentDescriptor?.url ?? null,
+        sourceId: sourceId ?? null,
+        isrc: null,
+      });
+    }
+    if (tracks.length === 0) return null;
+
+    let metadata: AppleLdPlaylist = {};
+    const ld = html.match(
+      /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i,
+    )?.[1];
+    if (ld) {
+      try {
+        metadata = JSON.parse(ld) as AppleLdPlaylist;
+      } catch {
+        metadata = {};
+      }
+    }
+
+    const total = metadata.numTracks ?? tracks.length;
+    return {
+      name: metadata.name ?? 'Apple Music 歌单',
+      description: metadata.description ?? null,
+      coverUrl: tracks[0]?.coverUrl ?? null,
+      creator: metadata.author?.name ?? null,
+      warning:
+        total > tracks.length
+          ? `Apple Music 公开页面只返回了 ${tracks.length} / ${total} 首。`
+          : undefined,
+      tracks,
+    };
+  }
+
+  private collectSerializedTracks(value: unknown, out: AppleSerializedTrack[]): void {
+    if (Array.isArray(value)) {
+      for (const item of value) this.collectSerializedTracks(item, out);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.title === 'string' &&
+      typeof record.artistName === 'string' &&
+      record.contentDescriptor &&
+      typeof record.contentDescriptor === 'object'
+    ) {
+      out.push(record as AppleSerializedTrack);
+    }
+    for (const child of Object.values(record)) {
+      this.collectSerializedTracks(child, out);
+    }
+  }
+
+  private async fetchCatalogPlaylist(ref: ParsedRef): Promise<RemotePlaylist> {
     const token = this.token();
     const storefront = ref.storefront || this.storefront();
     const plural = ref.kind === 'album' ? 'albums' : 'playlists';

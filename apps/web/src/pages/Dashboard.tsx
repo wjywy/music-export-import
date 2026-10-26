@@ -14,7 +14,9 @@ export function Dashboard() {
   const playlists = useQuery({ queryKey: ['playlists'], queryFn: api.playlists });
   const visible = (playlists.data ?? []).filter(
     (playlist) =>
-      playlist.sourcePlatform === 'netease' || playlist.sourcePlatform === 'qq',
+      playlist.sourcePlatform === 'netease' ||
+      playlist.sourcePlatform === 'qq' ||
+      playlist.sourcePlatform === 'apple',
   );
   const count = visible.length;
 

@@ -30,8 +30,8 @@ export function Landing() {
             ) : null}
           </div>
           <div className="chips">
-            <span>来源只支持 QQ / 网易云</span>
-            <span>可迁往 Apple Music</span>
+            <span>来源：QQ / 网易云 / Apple</span>
+            <span>可迁往三个平台</span>
             <span>自动匹配并写入</span>
           </div>
         </div>

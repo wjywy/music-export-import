@@ -24,6 +24,7 @@ export function platformShort(platform: Platform | null | undefined): string {
 export function detectPlatform(url: string): Platform | null {
   const value = url.trim().toLowerCase();
   if (!value) return null;
+  if (value.includes('music.apple.com')) return 'apple';
   if (value.includes('music.163.com') || value.includes('163cn.tv')) return 'netease';
   if (value.includes('y.qq.com') || value.includes('i.y.qq.com') || value.includes('qq.com')) return 'qq';
   return null;

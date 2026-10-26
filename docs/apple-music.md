@@ -7,6 +7,20 @@
 
 QQ 音乐、网易云音乐不提供面向个人开发者的写入 API；Soundiiz 帮我们完成 Apple Music 侧的授权和写入。TuneMyMusic 保留为下载文件备用。
 
+## Apple Music 作为来源
+
+Apple Music 的公开分享链接可以直接粘贴到「导入」：
+
+- 服务端读取页面里的 `serialized-server-data`，解析曲名、歌手、时长、封面和 Apple 曲目 ID；
+- 不需要 Apple Developer Program，也不需要用户登录 Apple；
+- 导入后可以匹配并写入 QQ 音乐或网易云音乐，复用现有扫码写入链路。
+
+限制：
+
+- 只对**公开可访问**的分享链接稳定；私密歌单、资料库歌单页面不会包含完整曲目，需要 MusicKit 用户授权，或先用 Soundiiz / TuneMyMusic 导出 CSV/TXT；
+- Apple 页面结构可能改版，解析失败时会回退到官方 API（需要 `APPLE_MUSIC_TOKEN`）；
+- Apple 曲库有、QQ/网易云没有版权的歌仍会被跳过。
+
 ## 一、免费模式：Soundiiz（默认）
 
 用户操作：

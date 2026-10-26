@@ -80,9 +80,9 @@ export class ImportsService {
   }
 
   private assertSupported(ref: ParsedRef): void {
-    if (ref.platform !== 'netease' && ref.platform !== 'qq') {
+    if (ref.platform !== 'netease' && ref.platform !== 'qq' && ref.platform !== 'apple') {
       throw new BadRequestException(
-        '目前只支持 QQ 音乐和网易云音乐之间的迁移。',
+        '目前支持 QQ 音乐、网易云音乐和 Apple Music 的公开歌单。',
       );
     }
   }

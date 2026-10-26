@@ -5,7 +5,7 @@ import { ArrowRight, Upload } from '../components/Icons';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { detectPlatform, PLATFORM_INFO } from '../lib/platforms';
-import type { AccountQr, AccountQrStatus, ImportJob } from '../lib/types';
+import type { AccountQr, AccountQrStatus, ImportJob, Platform } from '../lib/types';
 
 const STATUS_LABEL: Record<ImportJob['status'], string> = {
   queued: '排队中',
@@ -16,9 +16,13 @@ const STATUS_LABEL: Record<ImportJob['status'], string> = {
   failed: '失败',
 };
 
-const EXAMPLES = [
-  { platform: 'netease' as const, url: 'https://music.163.com/playlist?id=3778678' },
-  { platform: 'qq' as const, url: 'https://y.qq.com/n/ryqq/playlist/7367094501' },
+const EXAMPLES: { platform: Platform; url: string }[] = [
+  { platform: 'netease', url: 'https://music.163.com/playlist?id=3778678' },
+  { platform: 'qq', url: 'https://y.qq.com/n/ryqq/playlist/7367094501' },
+  {
+    platform: 'apple',
+    url: 'https://music.apple.com/cn/playlist/热播金曲-流行/pl.f642b91321c94b8d995689d0651cc2c6',
+  },
 ];
 
 export function ImportPage() {
@@ -185,7 +189,7 @@ export function ImportPage() {
           <span className="eyebrow">导入</span>
           <h1 className="page-title">粘贴一张歌单。</h1>
           <div className="page-meta">
-            <span>来源只支持 QQ 音乐 / 网易云音乐的公开歌单链接</span>
+            <span>支持 QQ 音乐、网易云音乐和 Apple Music 的公开歌单链接</span>
           </div>
         </div>
       </div>
@@ -207,7 +211,7 @@ export function ImportPage() {
                   {PLATFORM_INFO[detected].monogram} · {PLATFORM_INFO[detected].name}
                 </span>
               ) : url ? (
-                <span className="tag tag--sand">来源只支持 QQ / 网易云</span>
+                <span className="tag tag--sand">支持 QQ / 网易云 / Apple</span>
               ) : null}
             </div>
             <div className="url-field">
@@ -215,7 +219,7 @@ export function ImportPage() {
                 className="input"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="粘贴 QQ 音乐或网易云歌单链接"
+                placeholder="粘贴 QQ 音乐、网易云或 Apple Music 歌单链接"
                 required
                 inputMode="url"
                 autoComplete="off"
