@@ -114,30 +114,65 @@ export class NeteaseAdapter implements PlatformAdapter {
     }
 
     let songs = detail.playlist.tracks ?? [];
-    try {
-      const all = await fetchJson<NeteaseSongs>(
-        `https://music.163.com/api/playlist/track/all?id=${ref.id}&limit=1000&offset=0`,
-        { headers },
-      );
-      if (all.code === 200 && all.songs?.length) songs = all.songs;
-    } catch {
-      // The embedded tracks are still usable when the full-list endpoint is blocked.
-    }
-
     const declared = detail.playlist.trackCount ?? songs.length;
-    if (declared > songs.length && cookie) {
-      try {
-        const all = await neteaseApi.playlist_track_all({
-          id: ref.id,
-          limit: 1000,
-          offset: 0,
-          cookie,
-        });
-        if (all.body?.code === 200 && all.body.songs?.length) {
-          songs = all.body.songs;
+    const pageSize = 1000;
+
+    const mergeUnique = (target: NeteaseSong[], page: NeteaseSong[]): void => {
+      const seen = new Set(
+        target.map((song) =>
+          song.id ? `id:${song.id}` : `name:${song.name ?? ''}|${song.ar?.[0]?.name ?? ''}`,
+        ),
+      );
+      for (const song of page) {
+        const key = song.id
+          ? `id:${song.id}`
+          : `name:${song.name ?? ''}|${song.ar?.[0]?.name ?? ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        target.push(song);
+      }
+    };
+
+    if (declared > songs.length) {
+      const collected: NeteaseSong[] = [];
+      let rawWorked = false;
+      for (let offset = 0; offset < declared && offset < 20_000; offset += pageSize) {
+        try {
+          const page = await fetchJson<NeteaseSongs>(
+            `https://music.163.com/api/playlist/track/all?id=${ref.id}&limit=${pageSize}&offset=${offset}`,
+            { headers },
+          );
+          const pageSongs = page.songs ?? [];
+          if (page.code !== 200 || pageSongs.length === 0) break;
+          mergeUnique(collected, pageSongs);
+          rawWorked = true;
+          if (pageSongs.length < pageSize) break;
+        } catch {
+          break;
         }
-      } catch {
-        // Keep the partial list and warn below.
+      }
+
+      if (rawWorked && collected.length > songs.length) {
+        songs = collected;
+      } else if (cookie) {
+        const collectedByApi: NeteaseSong[] = [];
+        for (let offset = 0; offset < declared && offset < 20_000; offset += pageSize) {
+          try {
+            const page = await neteaseApi.playlist_track_all({
+              id: ref.id,
+              limit: pageSize,
+              offset,
+              cookie,
+            });
+            const pageSongs = page.body?.songs ?? [];
+            if (page.body?.code !== 200 || pageSongs.length === 0) break;
+            mergeUnique(collectedByApi, pageSongs);
+            if (pageSongs.length < pageSize) break;
+          } catch {
+            break;
+          }
+        }
+        if (collectedByApi.length > songs.length) songs = collectedByApi;
       }
     }
     const warning =
