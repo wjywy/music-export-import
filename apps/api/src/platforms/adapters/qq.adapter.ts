@@ -22,6 +22,14 @@ interface QQSong {
   singer?: { name?: string }[];
 }
 
+interface QQDirInfo {
+  title?: string;
+  picurl?: string;
+  desc?: string;
+  songnum?: number;
+  nickname?: string;
+}
+
 interface QQMusicuPlaylist {
   code?: number;
   req_0?: {
@@ -90,44 +98,90 @@ export class QQAdapter implements PlatformAdapter {
   }
 
   async fetchPlaylist(ref: ParsedRef): Promise<RemotePlaylist> {
-    const response = await fetchJson<QQMusicuPlaylist>(
-      'https://u.y.qq.com/cgi-bin/musicu.fcg',
-      {
-        method: 'POST',
-        headers: {
-          ...this.headers(),
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          req_0: {
-            module: 'music.srfDissInfo.aiDissInfo',
-            method: 'uniform_get_Dissinfo',
-            param: {
-              disstid: Number(ref.id),
-              enc_host_uin: '',
-              tag: 1,
-              userinfo: 1,
-              song_begin: 0,
-              song_num: 1000,
+    const pageSize = 1000;
+    const songs: QQSong[] = [];
+    let dirinfo: QQDirInfo | null = null;
+    let total: number | null = null;
+    let begin = 0;
+    let partialError: unknown = null;
+
+    for (let page = 0; page < 30; page += 1) {
+      let response: QQMusicuPlaylist;
+      try {
+        response = await fetchJson<QQMusicuPlaylist>(
+          'https://u.y.qq.com/cgi-bin/musicu.fcg',
+          {
+            method: 'POST',
+            headers: {
+              ...this.headers(),
+              'content-type': 'application/json',
             },
+            body: JSON.stringify({
+              req_0: {
+                module: 'music.srfDissInfo.aiDissInfo',
+                method: 'uniform_get_Dissinfo',
+                param: {
+                  disstid: Number(ref.id),
+                  enc_host_uin: '',
+                  tag: 1,
+                  userinfo: 1,
+                  song_begin: begin,
+                  song_num: pageSize,
+                },
+              },
+              comm: COMM,
+            }),
           },
-          comm: COMM,
-        }),
-      },
-    );
-    const data = response.req_0?.data;
-    if (!data?.dirinfo || data.code !== 0) {
+        );
+      } catch (error) {
+        if (page === 0) throw error;
+        partialError = error;
+        break;
+      }
+
+      const data = response.req_0?.data;
+      if (!data?.dirinfo || data.code !== 0) {
+        if (page === 0) {
+          throw new PlatformError(
+            'NOT_FOUND',
+            '没有找到这个 QQ 音乐歌单，可能已删除、设为私密，或需要登录。',
+          );
+        }
+        break;
+      }
+
+      if (page === 0) {
+        dirinfo = data.dirinfo;
+        total = data.dirinfo.songnum ?? null;
+      }
+
+      const pageSongs = data.songlist ?? [];
+      songs.push(...pageSongs);
+      if (pageSongs.length === 0) break;
+      begin += pageSongs.length;
+      if (total !== null && songs.length >= total) break;
+      if (pageSongs.length < pageSize) break;
+    }
+
+    if (!dirinfo) {
       throw new PlatformError(
         'NOT_FOUND',
         '没有找到这个 QQ 音乐歌单，可能已删除、设为私密，或需要登录。',
       );
     }
+
+    const warning =
+      total !== null && songs.length < total
+        ? `平台只返回了 ${songs.length} / ${total} 首${partialError ? '，后续分页读取失败' : ''}。`
+        : undefined;
+
     return {
-      name: data.dirinfo.title ?? '未命名歌单',
-      description: data.dirinfo.desc ?? null,
-      coverUrl: data.dirinfo.picurl ?? null,
-      creator: data.dirinfo.nickname ?? null,
-      tracks: (data.songlist ?? []).map((song) => this.toTrack(song)),
+      name: dirinfo.title ?? '未命名歌单',
+      warning,
+      description: dirinfo.desc ?? null,
+      coverUrl: dirinfo.picurl ?? null,
+      creator: dirinfo.nickname ?? null,
+      tracks: songs.map((song) => this.toTrack(song)),
     };
   }
 
