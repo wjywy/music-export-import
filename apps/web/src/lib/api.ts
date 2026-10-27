@@ -146,14 +146,14 @@ export const api = {
     request<PushResult>(`/playlists/${playlistId}/push`, {
       method: 'POST',
       body: jsonBody({ platform }),
-      timeoutMs: 240_000,
+      timeoutMs: 900_000,
     }),
 
   matchPlaylist: (playlistId: string, platform: Platform) =>
     request<MatchResult>(`/playlists/${playlistId}/match`, {
       method: 'POST',
       body: jsonBody({ platform }),
-      timeoutMs: 240_000,
+      timeoutMs: 900_000,
     }),
 
   appleConfig: () =>
@@ -171,7 +171,7 @@ export const api = {
   applePushPlaylist: (playlistId: string) =>
     request<ApplePushResult>(`/platforms/apple/playlists/${playlistId}/push`, {
       method: 'POST',
-      timeoutMs: 300_000,
+      timeoutMs: 900_000,
     }),
   appleImportLinks: (playlistId: string) =>
     request<AppleImportLinks>(

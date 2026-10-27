@@ -50,7 +50,7 @@ interface NeteaseSession {
 }
 
 const QR_TTL_MS = 5 * 60_000;
-const TRACK_BATCH = 100;
+const TRACK_BATCH = 500;
 
 @Injectable()
 export class NeteaseAccountService {

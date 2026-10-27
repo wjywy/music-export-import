@@ -465,7 +465,7 @@ export class PlaylistsService {
       aliasRows.map((alias) => [`${alias.titleKey}|${alias.artistKey}`, alias]),
     );
 
-    const outcomes = await mapLimit(items, 3, async (item) => {
+    const outcomes = await mapLimit(items, 8, async (item) => {
       const current = existingByItem.get(item.id);
       if (current?.source === 'manual') {
         return { item, current: current ?? null, alias: null, result: null, preserved: true, error: null };
