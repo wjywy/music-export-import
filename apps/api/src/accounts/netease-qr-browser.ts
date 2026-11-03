@@ -15,7 +15,7 @@ export interface BrowserQrSession {
 }
 
 const logger = new Logger('NeteaseQrBrowser');
-const LOGIN_URL = 'https://music.163.com/';
+const LOGIN_URL = 'https://music.163.com/#/login';
 
 const LAUNCH_ARGS = [
   '--no-sandbox',
@@ -144,7 +144,7 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
         .catch(() => undefined);
     });
 
-    stage = '等待网易云首页响应';
+    stage = '等待网易云登录页响应';
     const response = await page.goto(LOGIN_URL, {
       waitUntil: 'commit',
       timeout: Math.min(20_000, remaining()),
@@ -152,11 +152,6 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
     if (!response?.ok()) {
       throw new Error(`HTTP ${response?.status() ?? 'unknown'}`);
     }
-    stage = '打开登录入口';
-    await page
-      .locator('a', { hasText: '登录' })
-      .first()
-      .click({ timeout: Math.min(8_000, remaining()) });
     stage = '等待官网二维码';
     const deadline = Date.now() + Math.min(12_000, remaining());
     while (Date.now() < deadline && !(session.unikey && session.chainId)) {
