@@ -72,6 +72,8 @@ const WEB_HEADERS: Record<string, string> = {
 
 @Injectable()
 export class NeteaseAccountService {
+  private readonly browserStarts = new Map<string, Promise<AccountQr>>();
+
   private readonly browserSessions = new Map<
     string,
     { userId: string; session: BrowserQrSession; timer: NodeJS.Timeout }
@@ -127,7 +129,13 @@ export class NeteaseAccountService {
   }
 
   async startQr(userId: string): Promise<AccountQr> {
-    if (process.env.CHROME_PATH?.trim()) return this.startBrowserQr(userId);
+    if (process.env.CHROME_PATH?.trim()) {
+      const existing = this.browserStarts.get(userId);
+      if (existing) return existing;
+      const start = this.startBrowserQr(userId).finally(() => this.browserStarts.delete(userId));
+      this.browserStarts.set(userId, start);
+      return start;
+    }
 
     this.cleanupPending();
 
@@ -232,6 +240,9 @@ export class NeteaseAccountService {
   }
 
   private async startBrowserQr(userId: string): Promise<AccountQr> {
+    for (const [key, entry] of this.browserSessions) {
+      if (entry.userId === userId) await this.removeBrowserQr(key);
+    }
     const session = await openQrSession();
     if (!session) throw new BadGatewayException('无法打开网易云登录页，请稍后重试。');
 

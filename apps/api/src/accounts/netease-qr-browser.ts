@@ -1,15 +1,8 @@
 import { existsSync } from 'node:fs';
+import { Logger } from '@nestjs/common';
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 
-/**
- * NetEase decides whether a QR login may be confirmed by looking at the client
- * that asked for the code key: the same request sent from Node's TLS stack is
- * blocked with "设备环境异常" while the identical request from a real Chromium
- * is accepted. So the key is requested by an actual browser that opens the
- * official login page, and the page keeps polling by itself until the phone
- * confirms — we only read its result.
- */
 export type BrowserQrStatus = 'waiting' | 'scanned' | 'authorized';
 
 export interface BrowserQrSession {
@@ -21,8 +14,8 @@ export interface BrowserQrSession {
   cookie: string | null;
 }
 
-const USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const logger = new Logger('NeteaseQrBrowser');
+const LOGIN_URL = 'https://music.163.com/';
 
 const LAUNCH_ARGS = [
   '--no-sandbox',
@@ -54,13 +47,15 @@ export async function qrBrowser(): Promise<Browser | null> {
         const browser = await chromium.launch({
           executablePath: executablePath(),
           headless: true,
+          timeout: 10_000,
           args: LAUNCH_ARGS,
         });
         browser.on('disconnected', () => {
           browserPromise = null;
         });
         return browser;
-      } catch {
+      } catch (error) {
+        logger.warn(`启动 Chromium 失败 (${error instanceof Error ? error.name : 'unknown'})`);
         browserPromise = null;
         return null;
       }
@@ -80,82 +75,102 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * running so its own polling keeps the login session alive.
  */
 export async function openQrSession(): Promise<BrowserQrSession | null> {
+  const startedAt = Date.now();
   const browser = await qrBrowser();
   if (!browser) return null;
 
-  const context = await browser.newContext({
-    userAgent: USER_AGENT,
-    locale: 'zh-CN',
-    viewport: { width: 1280, height: 900 },
-  });
-  const page = await context.newPage();
-
-  const session: BrowserQrSession = {
-    context,
-    page,
-    unikey: '',
-    chainId: '',
-    status: 'waiting',
-    cookie: null,
-  };
-
-  page.on('request', (request) => {
-    const chainId = request.headers()['x-login-chain-id'];
-    if (chainId && !session.chainId) session.chainId = chainId;
-  });
-
-  page.on('response', (response) => {
-    const url = response.url();
-    if (url.includes('/weapi/login/qrcode/unikey')) {
-      response
-        .json()
-        .then((body: { unikey?: string }) => {
-          if (body?.unikey && !session.unikey) session.unikey = body.unikey;
-        })
-        .catch(() => undefined);
-      return;
-    }
-    if (!url.includes('/weapi/login/qrcode/client/login')) return;
-    response
-      .json()
-      .then(async (body: { code?: number }) => {
-        if (body?.code === 802 && session.status === 'waiting') {
-          session.status = 'scanned';
-        }
-        if (body?.code === 803) {
-          const cookies = await context
-            .cookies('https://music.163.com')
-            .catch(() => []);
-          session.cookie = cookieHeader(cookies) || null;
-          session.status = 'authorized';
-        }
-      })
-      .catch(() => undefined);
-  });
+  let context: BrowserContext | undefined;
+  let stage = '创建浏览器页面';
+  let navigationFailure: string | undefined;
+  const remaining = () => Math.max(1, 38_000 - (Date.now() - startedAt));
 
   try {
-    await page.goto('https://music.163.com/', {
-      waitUntil: 'domcontentloaded',
-      timeout: 20_000,
+    context = await browser.newContext({
+      locale: 'zh-CN',
+      viewport: { width: 1280, height: 900 },
     });
+    const page = await context.newPage();
+    page.setDefaultTimeout(remaining());
+    await page.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      return ['image', 'media', 'font'].includes(type) ? route.abort() : route.continue();
+    });
+    page.on('requestfailed', (request) => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        navigationFailure = request.failure()?.errorText;
+      }
+    });
+
+    const session: BrowserQrSession = {
+      context,
+      page,
+      unikey: '',
+      chainId: '',
+      status: 'waiting',
+      cookie: null,
+    };
+
+    page.on('request', (request) => {
+      const chainId = request.headers()['x-login-chain-id'];
+      if (chainId && !session.chainId) session.chainId = chainId;
+    });
+
+    page.on('response', (response) => {
+      const url = response.url();
+      if (url.includes('/weapi/login/qrcode/unikey')) {
+        response
+          .json()
+          .then((body: { unikey?: string }) => {
+            if (body?.unikey && !session.unikey) session.unikey = body.unikey;
+          })
+          .catch(() => undefined);
+        return;
+      }
+      if (!url.includes('/weapi/login/qrcode/client/login')) return;
+      response
+        .json()
+        .then(async (body: { code?: number }) => {
+          if (body?.code === 802 && session.status === 'waiting') {
+            session.status = 'scanned';
+          }
+          if (body?.code === 803) {
+            const cookies = await session.context
+              .cookies('https://music.163.com')
+              .catch(() => []);
+            session.cookie = cookieHeader(cookies) || null;
+            session.status = 'authorized';
+          }
+        })
+        .catch(() => undefined);
+    });
+
+    stage = '等待网易云首页响应';
+    const response = await page.goto(LOGIN_URL, {
+      waitUntil: 'commit',
+      timeout: Math.min(20_000, remaining()),
+    });
+    if (!response?.ok()) {
+      throw new Error(`HTTP ${response?.status() ?? 'unknown'}`);
+    }
+    stage = '打开登录入口';
     await page
       .locator('a', { hasText: '登录' })
       .first()
-      .click({ timeout: 8_000 });
-    const deadline = Date.now() + 12_000;
+      .click({ timeout: Math.min(8_000, remaining()) });
+    stage = '等待官网二维码';
+    const deadline = Date.now() + Math.min(12_000, remaining());
     while (Date.now() < deadline && !(session.unikey && session.chainId)) {
       await sleep(200);
     }
-  } catch {
-    await closeQrSession(session);
-    return null;
-  }
 
-  if (!session.unikey || !session.chainId) {
-    await closeQrSession(session);
+    if (!session.unikey || !session.chainId) throw new Error('missing QR session');
+    return session;
+  } catch (error) {
+    const reason = navigationFailure ?? (error instanceof Error ? error.name : 'unknown');
+    logger.warn(`${stage}失败，耗时 ${Date.now() - startedAt}ms (${reason})`);
+    await context?.close().catch(() => undefined);
     return null;
   }
-  return session;
 }
 
 export async function closeQrSession(session: BrowserQrSession): Promise<void> {
