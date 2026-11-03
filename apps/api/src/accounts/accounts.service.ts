@@ -46,6 +46,17 @@ export class AccountsService {
     return this.qq.disconnect(userId);
   }
 
+  async connectWithCookie(
+    userId: string,
+    platform: AccountPlatform,
+    cookie: string,
+  ): Promise<AccountStatus> {
+    if (platform === 'netease') {
+      return this.netease.connectWithCookie(userId, cookie);
+    }
+    throw new BadRequestException('QQ 音乐还不支持粘贴 Cookie，请用扫码登录。');
+  }
+
   async push(
     userId: string,
     playlistId: string,

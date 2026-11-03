@@ -109,6 +109,10 @@ export function TransferDialog({
   const [qr, setQr] = useState<AccountQr | null>(null);
   const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle'>('idle');
   const [accountError, setAccountError] = useState<string | null>(null);
+  const [cookieOpen, setCookieOpen] = useState(false);
+  const [cookieInput, setCookieInput] = useState('');
+  const [cookieBusy, setCookieBusy] = useState(false);
+  const [cookieError, setCookieError] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
   const [matching, setMatching] = useState(false);
   const [appleConnecting, setAppleConnecting] = useState(false);
@@ -128,6 +132,9 @@ export function TransferDialog({
     setQr(null);
     setQrState('idle');
     setAccountError(null);
+    setCookieOpen(false);
+    setCookieInput('');
+    setCookieError(null);
     setPushResult(null);
     setMatching(false);
     setAppleConnecting(false);
@@ -181,6 +188,33 @@ export function TransferDialog({
       setQr(null);
       setQrState('idle');
       setAccountError(error instanceof Error ? error.message : '生成二维码失败。');
+    }
+  }
+
+  async function connectWithCookie() {
+    if (isApple) return;
+    const cookie = cookieInput.trim();
+    if (!cookie) {
+      setCookieError('先把浏览器里的 Cookie 粘贴进来。');
+      return;
+    }
+    setCookieBusy(true);
+    setCookieError(null);
+    setAccountError(null);
+    try {
+      await api.connectAccountCookie(target, cookie);
+      await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      setQr(null);
+      setQrState('idle');
+      setCookieOpen(false);
+      setCookieInput('');
+      toast('已用 Cookie 连接账号。');
+    } catch (error) {
+      setCookieError(
+        error instanceof Error ? error.message : 'Cookie 登录失败，请重试。',
+      );
+    } finally {
+      setCookieBusy(false);
     }
   }
 
@@ -680,14 +714,28 @@ export function TransferDialog({
                   <p className="field-hint">
                     扫码一次，之后渡口直接建歌单；登录态 AES-256-GCM 加密保存，可随时断开。
                   </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={Boolean(qr) || pushing}
-                    onClick={() => void connect()}
-                  >
-                    {qr ? '等待扫码…' : `扫码连接 ${targetName}`}
-                  </button>
+                  <div className="panel-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={Boolean(qr) || pushing}
+                      onClick={() => void connect()}
+                    >
+                      {qr ? '等待扫码…' : `扫码连接 ${targetName}`}
+                    </button>
+                    {target === 'netease' ? (
+                      <button
+                        type="button"
+                        className="btn btn-quiet btn-sm"
+                        onClick={() => {
+                          setCookieOpen((open) => !open);
+                          setCookieError(null);
+                        }}
+                      >
+                        {cookieOpen ? '收起 Cookie 登录' : '扫码被拦截？用 Cookie'}
+                      </button>
+                    ) : null}
+                  </div>
                 </>
               )}
 
@@ -702,13 +750,73 @@ export function TransferDialog({
                         : scanHint}
                   </p>
                   {qrState === 'expired' ? (
+                    <>
+                      <p>
+                        如果手机上提示「设备环境异常」，那是网易云的风控拦截，
+                        扫码会一直被拦，可以改用 Cookie 登录。
+                      </p>
+                      <div className="panel-actions">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void connect()}
+                        >
+                          重新生成
+                        </button>
+                        {target === 'netease' ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                              setQr(null);
+                              setQrState('idle');
+                              setCookieOpen(true);
+                            }}
+                          >
+                            改用 Cookie 登录
+                          </button>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {cookieOpen && target === 'netease' ? (
+                <div className="account-cookie">
+                  <p className="field-hint">
+                    在电脑浏览器登录{' '}
+                    <a
+                      href="https://music.163.com"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      music.163.com
+                    </a>
+                    ，按 F12 打开开发者工具 → 切到 Network（网络）→ 刷新页面 →
+                    点任意请求 → Headers（标头）里找到 Cookie，整行复制贴进来。
+                    这一条完全绕开扫码，登录态同样是加密保存。
+                  </p>
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                    spellCheck={false}
+                    value={cookieInput}
+                    placeholder="MUSIC_U=...; __csrf=..."
+                    onChange={(event) => setCookieInput(event.target.value)}
+                  />
+                  <div className="panel-actions">
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => void connect()}
+                      className="btn btn-primary btn-sm"
+                      disabled={cookieBusy}
+                      onClick={() => void connectWithCookie()}
                     >
-                      重新生成
+                      {cookieBusy ? '正在验证…' : '用 Cookie 连接'}
                     </button>
+                  </div>
+                  {cookieError ? (
+                    <div className="form-error">{cookieError}</div>
                   ) : null}
                 </div>
               ) : null}

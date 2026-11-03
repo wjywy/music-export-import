@@ -12,7 +12,7 @@ import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AccountsService } from './accounts.service';
-import { PushPlaylistDto } from './accounts.dto';
+import { ConnectCookieDto, PushPlaylistDto } from './accounts.dto';
 import { isAccountPlatform } from './account.types';
 
 @Controller('accounts')
@@ -31,6 +31,18 @@ export class AccountsController {
       throw new BadRequestException('目前只支持网易云音乐和 QQ 音乐。');
     }
     return this.accounts.startQr(platform);
+  }
+
+  @Post(':platform/cookie')
+  connectCookie(
+    @CurrentUser() user: AuthUser,
+    @Param('platform') platform: string,
+    @Body() dto: ConnectCookieDto,
+  ) {
+    if (!isAccountPlatform(platform)) {
+      throw new BadRequestException('目前只支持网易云音乐和 QQ 音乐。');
+    }
+    return this.accounts.connectWithCookie(user.sub, platform, dto.cookie);
   }
 
   @Get(':platform/qr/:key')

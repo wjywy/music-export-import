@@ -45,6 +45,33 @@ export function cookieValue(raw: string | undefined | null, name: string): strin
   return null;
 }
 
+/**
+ * The QR the official web login shows: a /st/platform/scanlogin link carrying a
+ * chainId. The legacy `music.163.com/login?codekey=` link is what the app opens
+ * in its in-app browser, which is where NetEase's risk control blocks the scan.
+ */
+export function scanLoginUrl(key: string, chainId: string): string {
+  const params = new URLSearchParams({
+    codekey: key,
+    chainId,
+    hdw_device: 'web',
+    hdw_appid: 'web',
+    hitExp: '1',
+  });
+  return `https://music.163.com/st/platform/scanlogin?${params.toString()}`;
+}
+
+/** Mirrors the web client: v1_<sDeviceId|unknown-N>_web_login_<timestamp>. */
+export function scanLoginChainId(
+  cookie: string,
+  timestamp = Date.now(),
+  random = Math.random,
+): string {
+  const deviceId =
+    cookieValue(cookie, 'sDeviceId') ?? `unknown-${Math.floor(random() * 1e6)}`;
+  return `v1_${deviceId}_web_login_${timestamp}`;
+}
+
 /** Code-point safe truncation for playlist names required by each platform. */
 export function compactPlaylistName(
   title: string,

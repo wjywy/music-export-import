@@ -6,6 +6,8 @@ import {
   neteaseIdFromUrl,
   normalizeCookie,
   qqMidFromUrl,
+  scanLoginChainId,
+  scanLoginUrl,
   uniqueNumericIds,
 } from '../../src/accounts/account.utils';
 
@@ -43,4 +45,22 @@ test('uniqueNumericIds dedupes and rejects non-numeric values', () => {
 
 test('chunkArray keeps order', () => {
   assert.deepEqual(chunkArray([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+});
+
+test('scanLoginUrl mirrors the link music.163.com encodes', () => {
+  assert.equal(
+    scanLoginUrl('abc-123', 'v1_dev_web_login_1'),
+    'https://music.163.com/st/platform/scanlogin?codekey=abc-123&chainId=v1_dev_web_login_1&hdw_device=web&hdw_appid=web&hitExp=1',
+  );
+});
+
+test('scanLoginChainId uses sDeviceId from the cookie when present', () => {
+  assert.equal(
+    scanLoginChainId('sDeviceId=DEVICE; NMTID=1', 1000),
+    'v1_DEVICE_web_login_1000',
+  );
+  assert.equal(
+    scanLoginChainId('NMTID=1', 1000, () => 0.5),
+    'v1_unknown-500000_web_login_1000',
+  );
 });

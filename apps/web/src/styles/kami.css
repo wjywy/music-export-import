@@ -2928,6 +2928,27 @@ img {
   text-align: center;
 }
 
+.account-cookie {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.account-cookie .textarea {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12.5px;
+  min-height: 88px;
+}
+
+.account-cookie .panel-actions {
+  margin-top: 0;
+}
+
 .push-result {
   margin-top: 12px;
   padding: 12px;

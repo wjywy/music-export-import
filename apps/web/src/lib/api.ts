@@ -140,6 +140,12 @@ export const api = {
     request<AccountQrStatus>(`/accounts/${platform}/qr/${encodeURIComponent(key)}`, {
       timeoutMs: 20_000,
     }),
+  connectAccountCookie: (platform: AccountPlatform, cookie: string) =>
+    request<AccountStatus>(`/accounts/${platform}/cookie`, {
+      method: 'POST',
+      body: jsonBody({ cookie }),
+      timeoutMs: 30_000,
+    }),
   disconnectAccount: (platform: AccountPlatform) =>
     request<{ ok: boolean }>(`/accounts/${platform}`, { method: 'DELETE' }),
   pushPlaylist: (playlistId: string, platform: AccountPlatform) =>

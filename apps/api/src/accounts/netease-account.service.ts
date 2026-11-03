@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
 import { PlatformCredential } from '../common/entities/platform-credential.entity';
 import { CredentialCipher } from '../platforms/credential-cipher.service';
@@ -18,8 +19,11 @@ import {
 import {
   chunkArray,
   compactPlaylistName,
+  cookieValue,
   neteaseIdFromUrl,
   normalizeCookie,
+  scanLoginChainId,
+  scanLoginUrl,
   uniqueNumericIds,
 } from './account.utils';
 
@@ -31,10 +35,13 @@ type ApiResponse = {
 
 type ApiFunction = (query: Record<string, unknown>) => Promise<ApiResponse>;
 
+type RawRequest = (
+  uri: string,
+  data: Record<string, unknown>,
+  options: Record<string, unknown>,
+) => Promise<ApiResponse>;
+
 interface NeteaseApiModule {
-  login_qr_key: ApiFunction;
-  login_qr_create: ApiFunction;
-  login_qr_check: ApiFunction;
   login_status: ApiFunction;
   playlist_create: ApiFunction;
   playlist_tracks: ApiFunction;
@@ -43,6 +50,10 @@ interface NeteaseApiModule {
 // NeteaseCloudMusicApi is a CommonJS package without TypeScript declarations.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const neteaseApi = require('NeteaseCloudMusicApi') as NeteaseApiModule;
+// The QR login has to mirror music.163.com exactly (type 1 + chainId), which
+// the high-level helpers do not expose, so those two calls use the raw client.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const neteaseRequest = require('NeteaseCloudMusicApi/util/request') as RawRequest;
 
 interface NeteaseSession {
   cookie: string;
@@ -102,35 +113,41 @@ export class NeteaseAccountService {
 
   async startQr(): Promise<AccountQr> {
     this.cleanupPending();
-    const keyResponse = await neteaseApi.login_qr_key({});
-    const unikey =
-      (keyResponse.body?.data as { unikey?: string } | undefined)?.unikey ??
-      (keyResponse.body?.unikey as string | undefined);
+
+    // type: 1 is what music.163.com itself uses for the web QR; the library
+    // default (3) is the legacy app flow that NetEase now flags.
+    const keyResponse = await neteaseRequest(
+      '/api/login/qrcode/unikey',
+      { type: 1 },
+      { crypto: 'weapi' },
+    );
+    const keyBody = (keyResponse.body ?? {}) as {
+      unikey?: string;
+      data?: { unikey?: string };
+    };
+    const unikey = keyBody.data?.unikey ?? keyBody.unikey;
     if (!unikey) {
       throw new BadGatewayException('网易云没有返回二维码标识，请稍后重试。');
     }
 
-    const qrResponse = await neteaseApi.login_qr_create({
-      key: unikey,
-      qrimg: true,
+    const cookie = normalizeCookie(keyResponse.cookie);
+    const url = scanLoginUrl(unikey, scanLoginChainId(cookie));
+    const image = await QRCode.toDataURL(url, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 360,
     });
-    const data = qrResponse.body?.data as
-      | { qrimg?: string; qrurl?: string }
-      | undefined;
-    if (!data?.qrimg) {
-      throw new BadGatewayException('网易云没有返回二维码图片，请稍后重试。');
-    }
 
     this.pending.set(unikey, {
-      cookie: normalizeCookie(keyResponse.cookie),
+      cookie,
       expiresAt: Date.now() + QR_TTL_MS,
     });
 
     return {
       platform: 'netease',
       key: unikey,
-      image: data.qrimg,
-      url: data.qrurl ?? null,
+      image,
+      url,
       expiresAt: new Date(Date.now() + QR_TTL_MS),
     };
   }
@@ -142,10 +159,11 @@ export class NeteaseAccountService {
       return { status: 'expired', message: '二维码已过期，请重新生成。' };
     }
 
-    const response = await neteaseApi.login_qr_check({
-      key,
-      cookie: pending.cookie || undefined,
-    });
+    const response = await neteaseRequest(
+      '/api/login/qrcode/client/login',
+      { key, type: 1 },
+      { crypto: 'weapi', cookie: pending.cookie || undefined },
+    );
     const body = (response.body ?? {}) as { code?: number; message?: string; cookie?: string };
     const code = Number(body.code ?? 0);
 
@@ -170,6 +188,27 @@ export class NeteaseAccountService {
   async disconnect(userId: string): Promise<{ ok: true }> {
     await this.credentials.delete({ userId, platform: 'netease' });
     return { ok: true };
+  }
+
+  /**
+   * Cookie login is the fallback for people whose scan is stopped by NetEase's
+   * risk control ("检测到当前设备环境异常"): the browser session is already
+   * trusted, so the tool only has to prove it is still valid before storing it.
+   */
+  async connectWithCookie(
+    userId: string,
+    rawCookie: string,
+  ): Promise<AccountStatus> {
+    const cookie = normalizeCookie(rawCookie);
+    if (!cookieValue(cookie, 'MUSIC_U')) {
+      throw new BadRequestException(
+        'Cookie 里没有 MUSIC_U。请在浏览器登录 music.163.com 后复制完整 Cookie。',
+      );
+    }
+
+    const profile = await this.requireProfile(cookie);
+    await this.saveSession(userId, { cookie, nickname: profile.nickname });
+    return this.status(userId);
   }
 
   async push(
@@ -275,6 +314,32 @@ export class NeteaseAccountService {
     } catch {
       return { nickname: null };
     }
+  }
+
+  /** Same call as fetchProfile, but tells the user when the cookie is dead. */
+  private async requireProfile(
+    cookie: string,
+  ): Promise<{ nickname: string | null }> {
+    let response: ApiResponse;
+    try {
+      response = await neteaseApi.login_status({ cookie });
+    } catch {
+      throw new BadGatewayException('连接网易云失败，请稍后再试。');
+    }
+
+    const body = (response.body ?? {}) as {
+      data?: { code?: number; profile?: { nickname?: string } };
+      code?: number;
+      profile?: { nickname?: string };
+    };
+    const data = body.data ?? body;
+    if (Number(data.code ?? 0) !== 200 || !data.profile) {
+      throw new UnauthorizedException(
+        '这个 Cookie 登不上网易云，可能已经过期。请重新在浏览器里登录后再复制。',
+      );
+    }
+
+    return { nickname: data.profile.nickname ?? null };
   }
 
   private async saveSession(userId: string, session: NeteaseSession): Promise<void> {

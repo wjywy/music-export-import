@@ -123,6 +123,7 @@ pnpm dev
 | GET | `/accounts` | QQ / 网易云连接状态 |
 | POST | `/accounts/:platform/qr` | 生成扫码二维码 |
 | GET | `/accounts/:platform/qr/:key` | 轮询扫码状态 |
+| POST | `/accounts/:platform/cookie` | 网易云：粘贴浏览器 Cookie 登录（扫码被风控拦截时的兜底） |
 | DELETE | `/accounts/:platform` | 断开账号 |
 | POST | `/playlists/:id/push` | QQ / 网易云：自动匹配并写入账号 |
 | POST | `/playlists/:id/match` | 匹配到目标平台（Apple 两步预览用） |
@@ -149,6 +150,8 @@ pnpm dev
 ## 注意
 
 - QQ / 网易云写入依赖平台非公开接口，可能触发风控或随改版失效。
+- 网易云扫码有时会被平台风控拦截：手机提示「检测到当前设备环境异常，本次操作已拦截」，渡口这边只会一直等扫码直到二维码过期。这是网易云服务端的判定，客户端绕不过去；此时改用「扫码被拦截？用 Cookie」，把浏览器里 `music.163.com` 的 Cookie 贴进来，后续链路和扫码登录完全一样。
+- 网易云二维码必须按官网现在的格式生成：`/st/platform/scanlogin?codekey=…&chainId=…&hdw_device=web&hdw_appid=web&hitExp=1`，unikey 用 `type: 1`。旧版 `music.163.com/login?codekey=` 链接（`NeteaseCloudMusicApi` 的默认值）会被 App 当普通网页在站内浏览器打开，正好落进风控拦截页。
 - Apple Music 免费导入依赖 Soundiiz：免费版单次最多 200 首，链接 24 小时有效；超过 200 首分段。TuneMyMusic 保留为下载文件备用。
 - 歌单曲名 / 歌手会发给 Soundiiz 生成临时链接；渡口不保存 Soundiiz 或 Apple 账号。
 - Apple Music 站内直写走官方 API，但需要 Apple Developer Program 和用户 Apple Music 订阅；v1 只支持 `cn` 区。
