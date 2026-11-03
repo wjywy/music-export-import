@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight } from './Icons';
 import { Dialog } from './Dialog';
 import { Loading } from './Loading';
 import { useToast } from '../context/ToastContext';
-import { api } from '../lib/api';
+import { ACCOUNT_QR_TIMEOUT_SECONDS, api } from '../lib/api';
 import {
   authorizeAppleMusic,
   preloadAppleMusic,
@@ -107,7 +107,8 @@ export function TransferDialog({
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<TransferTarget>('qq');
   const [qr, setQr] = useState<AccountQr | null>(null);
-  const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle'>('idle');
+  const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle' | 'generating'>('idle');
+  const qrRequest = useRef(0);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [cookieOpen, setCookieOpen] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
@@ -141,6 +142,7 @@ export function TransferDialog({
     setImportLinks(null);
     setCreatingLinks(false);
     setLinkError(null);
+    return () => { qrRequest.current += 1; };
   }, [open, target]);
 
   const playlist = useQuery({
@@ -179,13 +181,18 @@ export function TransferDialog({
     : accounts.data?.accounts.find((entry) => entry.platform === target);
 
   async function connect() {
-    if (isApple) return;
+    if (isApple || qrState === 'generating') return;
+    const request = ++qrRequest.current;
     setAccountError(null);
-    setQrState('waiting');
+    setQr(null);
+    setQrState('generating');
     try {
-      setQr(await api.startAccountQr(target));
+      const nextQr = await api.startAccountQr(target);
+      if (request !== qrRequest.current) return;
+      setQr(nextQr);
+      setQrState('waiting');
     } catch (error) {
-      setQr(null);
+      if (request !== qrRequest.current) return;
       setQrState('idle');
       setAccountError(error instanceof Error ? error.message : '生成二维码失败。');
     }
@@ -204,6 +211,7 @@ export function TransferDialog({
     try {
       await api.connectAccountCookie(target, cookie);
       await queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      qrRequest.current += 1;
       setQr(null);
       setQrState('idle');
       setCookieOpen(false);
@@ -718,7 +726,7 @@ export function TransferDialog({
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      disabled={Boolean(qr) || pushing}
+                      disabled={Boolean(qr) || qrState === 'generating' || pushing}
                       onClick={() => void connect()}
                     >
                       {qr ? '等待扫码…' : `扫码连接 ${targetName}`}
@@ -739,7 +747,11 @@ export function TransferDialog({
                 </>
               )}
 
-              {qr ? (
+              {qrState === 'generating' ? (
+                <div className="account-qr">
+                  <Loading label={`正在生成二维码，最多等待 ${ACCOUNT_QR_TIMEOUT_SECONDS} 秒`} />
+                </div>
+              ) : qr ? (
                 <div className="account-qr">
                   <img src={qr.image} alt={`${targetName} 登录二维码`} />
                   <p>

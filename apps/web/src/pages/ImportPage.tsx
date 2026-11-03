@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Upload } from '../components/Icons';
+import { Loading } from '../components/Loading';
 import { Seo } from '../components/Seo';
 import { useToast } from '../context/ToastContext';
-import { api } from '../lib/api';
+import { ACCOUNT_QR_TIMEOUT_SECONDS, api } from '../lib/api';
 import { detectPlatform, PLATFORM_INFO } from '../lib/platforms';
 import { ROBOTS_NOINDEX } from '../lib/seo';
 import type { AccountQr, AccountQrStatus, ImportJob, Platform } from '../lib/types';
@@ -35,7 +36,8 @@ export function ImportPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [forcePartial, setForcePartial] = useState(false);
   const [qr, setQr] = useState<AccountQr | null>(null);
-  const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle'>('idle');
+  const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle' | 'generating'>('idle');
+  const qrRequest = useRef(0);
   const [connectError, setConnectError] = useState<string | null>(null);
   const detected = detectPlatform(url);
 
@@ -64,15 +66,22 @@ export function ImportPage() {
     setQrState('idle');
     setConnectError(null);
     setForcePartial(false);
+    return () => { qrRequest.current += 1; };
   }, [url]);
 
   async function startQr() {
+    if (qrState === 'generating') return;
+    const request = ++qrRequest.current;
     setConnectError(null);
-    setQrState('waiting');
+    setQr(null);
+    setQrState('generating');
     try {
-      setQr(await api.startAccountQr('netease'));
+      const nextQr = await api.startAccountQr('netease');
+      if (request !== qrRequest.current) return;
+      setQr(nextQr);
+      setQrState('waiting');
     } catch (error) {
-      setQr(null);
+      if (request !== qrRequest.current) return;
       setQrState('idle');
       setConnectError(error instanceof Error ? error.message : '生成二维码失败。');
     }
@@ -146,9 +155,11 @@ export function ImportPage() {
   }
 
   function importPartial() {
+    qrRequest.current += 1;
     setForcePartial(true);
     setConnectOpen(false);
     setQr(null);
+    setQrState('idle');
     setJobId(null);
     create.mutate(url.trim());
   }
@@ -262,7 +273,11 @@ export function ImportPage() {
           <p className="field-hint">
             未连接时网易云只返回前 10 首；扫码后会自动读取完整歌单。
           </p>
-          {qr ? (
+          {qrState === 'generating' ? (
+            <div className="account-qr">
+              <Loading label={`正在生成二维码，最多等待 ${ACCOUNT_QR_TIMEOUT_SECONDS} 秒`} />
+            </div>
+          ) : qr ? (
             <div className="account-qr">
               <img src={qr.image} alt="网易云登录二维码" />
               <p>
@@ -282,10 +297,9 @@ export function ImportPage() {
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              disabled={qrState === 'waiting'}
               onClick={() => void startQr()}
             >
-              {qrState === 'waiting' ? '正在生成二维码…' : '扫码连接网易云'}
+              扫码连接网易云
             </button>
           )}
           {connectError ? <div className="form-error">{connectError}</div> : null}

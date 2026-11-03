@@ -54,6 +54,8 @@ interface RequestOptions extends RequestInit {
   timeoutMs?: number;
 }
 
+export const ACCOUNT_QR_TIMEOUT_SECONDS = 45;
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { auth = true, timeoutMs = 30_000, headers, ...rest } = options;
   const finalHeaders: Record<string, string> = {
@@ -134,7 +136,7 @@ export const api = {
   startAccountQr: (platform: AccountPlatform) =>
     request<AccountQr>(`/accounts/${platform}/qr`, {
       method: 'POST',
-      timeoutMs: 45_000,
+      timeoutMs: ACCOUNT_QR_TIMEOUT_SECONDS * 1000,
     }),
   checkAccountQr: (platform: AccountPlatform, key: string) =>
     request<AccountQrStatus>(`/accounts/${platform}/qr/${encodeURIComponent(key)}`, {
