@@ -26,11 +26,11 @@ export class AccountsController {
   }
 
   @Post(':platform/qr')
-  start(@Param('platform') platform: string) {
+  start(@CurrentUser() user: AuthUser, @Param('platform') platform: string) {
     if (!isAccountPlatform(platform)) {
       throw new BadRequestException('目前只支持网易云音乐和 QQ 音乐。');
     }
-    return this.accounts.startQr(platform);
+    return this.accounts.startQr(platform, user.sub);
   }
 
   @Post(':platform/cookie')

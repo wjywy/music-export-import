@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomBytes } from 'node:crypto';
 import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
 import { PlatformCredential } from '../common/entities/platform-credential.entity';
@@ -26,6 +27,7 @@ import {
   scanLoginUrl,
   uniqueNumericIds,
 } from './account.utils';
+import { closeQrSession, openQrSession, type BrowserQrSession } from './netease-qr-browser';
 
 type ApiResponse = {
   status?: number;
@@ -63,9 +65,22 @@ interface NeteaseSession {
 const QR_TTL_MS = 5 * 60_000;
 const TRACK_BATCH = 500;
 
+const WEB_HEADERS: Record<string, string> = {
+  'x-os': 'web',
+  'x-channelsource': 'undefined',
+};
+
 @Injectable()
 export class NeteaseAccountService {
-  private readonly pending = new Map<string, { cookie: string; expiresAt: number }>();
+  private readonly browserSessions = new Map<
+    string,
+    { userId: string; session: BrowserQrSession; timer: NodeJS.Timeout }
+  >();
+
+  private readonly pending = new Map<
+    string,
+    { cookie: string; chainId: string; expiresAt: number }
+  >();
 
   constructor(
     @InjectRepository(PlatformCredential)
@@ -111,15 +126,21 @@ export class NeteaseAccountService {
     }
   }
 
-  async startQr(): Promise<AccountQr> {
+  async startQr(userId: string): Promise<AccountQr> {
+    if (process.env.CHROME_PATH?.trim()) return this.startBrowserQr(userId);
+
     this.cleanupPending();
 
+    // The request library regenerates these IDs on each call unless supplied.
+    // Keep one anonymous session from QR creation through confirmation.
+    const visitorId = randomBytes(32).toString('hex');
+    const visitorCookie = `_ntes_nuid=${visitorId}; _ntes_nnid=${visitorId},${Date.now()}`;
     // type: 1 is what music.163.com itself uses for the web QR; the library
     // default (3) is the legacy app flow that NetEase now flags.
     const keyResponse = await neteaseRequest(
       '/api/login/qrcode/unikey',
       { type: 1 },
-      { crypto: 'weapi' },
+      { crypto: 'weapi', cookie: visitorCookie, headers: WEB_HEADERS },
     );
     const keyBody = (keyResponse.body ?? {}) as {
       unikey?: string;
@@ -130,8 +151,9 @@ export class NeteaseAccountService {
       throw new BadGatewayException('网易云没有返回二维码标识，请稍后重试。');
     }
 
-    const cookie = normalizeCookie(keyResponse.cookie);
-    const url = scanLoginUrl(unikey, scanLoginChainId(cookie));
+    const cookie = normalizeCookie([visitorCookie, normalizeCookie(keyResponse.cookie)]);
+    const chainId = scanLoginChainId(cookie);
+    const url = scanLoginUrl(unikey, chainId);
     const image = await QRCode.toDataURL(url, {
       errorCorrectionLevel: 'M',
       margin: 1,
@@ -140,6 +162,7 @@ export class NeteaseAccountService {
 
     this.pending.set(unikey, {
       cookie,
+      chainId,
       expiresAt: Date.now() + QR_TTL_MS,
     });
 
@@ -153,6 +176,20 @@ export class NeteaseAccountService {
   }
 
   async checkQr(userId: string, key: string): Promise<AccountQrStatus> {
+    const browser = this.browserSessions.get(key);
+    if (browser?.userId === userId) {
+      const { session } = browser;
+      if (session.status !== 'authorized') return { status: session.status };
+      if (!session.cookie || !cookieValue(session.cookie, 'MUSIC_U')) {
+        await this.removeBrowserQr(key);
+        throw new BadGatewayException('网易云登录成功，但没有返回会话 Cookie。');
+      }
+      const profile = await this.requireProfile(session.cookie);
+      await this.saveSession(userId, { cookie: session.cookie, nickname: profile.nickname });
+      await this.removeBrowserQr(key);
+      return { status: 'authorized', nickname: profile.nickname };
+    }
+
     const pending = this.pending.get(key);
     if (!pending || pending.expiresAt < Date.now()) {
       this.pending.delete(key);
@@ -162,7 +199,16 @@ export class NeteaseAccountService {
     const response = await neteaseRequest(
       '/api/login/qrcode/client/login',
       { key, type: 1 },
-      { crypto: 'weapi', cookie: pending.cookie || undefined },
+      {
+        crypto: 'weapi',
+        cookie: pending.cookie || undefined,
+        headers: {
+          ...WEB_HEADERS,
+          'nm-gcore-status': '1',
+          'x-loginmethod': 'QrCode',
+          'x-login-chain-id': pending.chainId,
+        },
+      },
     );
     const body = (response.body ?? {}) as { code?: number; message?: string; cookie?: string };
     const code = Number(body.code ?? 0);
@@ -183,6 +229,32 @@ export class NeteaseAccountService {
     await this.saveSession(userId, { cookie, nickname: profile.nickname });
     this.pending.delete(key);
     return { status: 'authorized', nickname: profile.nickname };
+  }
+
+  private async startBrowserQr(userId: string): Promise<AccountQr> {
+    const session = await openQrSession();
+    if (!session) throw new BadGatewayException('无法打开网易云登录页，请稍后重试。');
+
+    try {
+      const url = scanLoginUrl(session.unikey, session.chainId);
+      const image = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
+      const expiresAt = new Date(Date.now() + QR_TTL_MS);
+      const timer = setTimeout(() => void this.removeBrowserQr(session.unikey), QR_TTL_MS);
+      timer.unref();
+      this.browserSessions.set(session.unikey, { userId, session, timer });
+      return { platform: 'netease', key: session.unikey, image, url, expiresAt };
+    } catch (error) {
+      await closeQrSession(session);
+      throw error;
+    }
+  }
+
+  private async removeBrowserQr(key: string): Promise<void> {
+    const entry = this.browserSessions.get(key);
+    if (!entry) return;
+    this.browserSessions.delete(key);
+    clearTimeout(entry.timer);
+    await closeQrSession(entry.session);
   }
 
   async disconnect(userId: string): Promise<{ ok: true }> {

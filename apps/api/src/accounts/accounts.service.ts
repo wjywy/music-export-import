@@ -27,8 +27,8 @@ export class AccountsService {
     return { accounts: [netease, qq] };
   }
 
-  startQr(platform: AccountPlatform): Promise<AccountQr> {
-    if (platform === 'netease') return this.netease.startQr();
+  startQr(platform: AccountPlatform, userId: string): Promise<AccountQr> {
+    if (platform === 'netease') return this.netease.startQr(userId);
     return this.qq.startQr();
   }
 
