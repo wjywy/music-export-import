@@ -78,6 +78,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function openQrSession(): Promise<BrowserQrSession | null> {
   const startedAt = Date.now();
+  const sessionDeadline = startedAt + 38_000;
   const browser = await qrBrowser();
   if (!browser) return null;
 
@@ -85,10 +86,11 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
   let stage = '创建浏览器页面';
   let navigationFailure: string | undefined;
   let keyResult = '未发起';
+  let keyRequestedAt: number | undefined;
   let pollResult = '未发起';
   const pendingScripts = new Map<Request, string>();
   const failedScripts = new Set<string>();
-  const remaining = () => Math.max(1, 38_000 - (Date.now() - startedAt));
+  const remaining = () => Math.max(1, sessionDeadline - Date.now());
 
   try {
     context = await browser.newContext({
@@ -131,7 +133,10 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       if (request.resourceType() === 'script' && hostname) {
         pendingScripts.set(request, hostname);
       }
-      if (pathname === KEY_PATH && !session.unikey) keyResult = '已发起，等待响应';
+      if (pathname === KEY_PATH && !session.unikey) {
+        keyRequestedAt ??= Date.now();
+        keyResult = '已发起，等待响应';
+      }
       if (pathname === POLL_PATH) {
         const chainId = request.headers()['x-login-chain-id'];
         if (chainId && !session.chainId) session.chainId = chainId;
@@ -189,8 +194,12 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       throw new Error('Unexpected login page response');
     }
     stage = '等待官网二维码';
-    const deadline = Date.now() + Math.min(12_000, remaining());
-    while (Date.now() < deadline && !(session.unikey && session.chainId)) {
+    // The page may need extra time to initialize before it can send its first request.
+    while (!(session.unikey && session.chainId)) {
+      const deadline = keyRequestedAt !== undefined && !session.unikey
+        ? Math.min(sessionDeadline, keyRequestedAt + 12_000)
+        : sessionDeadline;
+      if (Date.now() >= deadline) break;
       await sleep(200);
     }
 
