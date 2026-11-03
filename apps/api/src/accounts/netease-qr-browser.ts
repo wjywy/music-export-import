@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { Logger } from '@nestjs/common';
 import { chromium } from 'playwright-core';
-import type { Browser, BrowserContext, Page } from 'playwright-core';
+import type { Browser, BrowserContext, Page, Request } from 'playwright-core';
 
 export type BrowserQrStatus = 'waiting' | 'scanned' | 'authorized';
 
@@ -16,6 +16,8 @@ export interface BrowserQrSession {
 
 const logger = new Logger('NeteaseQrBrowser');
 const LOGIN_URL = 'https://music.163.com/#/login';
+const KEY_PATH = '/weapi/login/qrcode/unikey';
+const POLL_PATH = '/weapi/login/qrcode/client/login';
 
 const LAUNCH_ARGS = [
   '--no-sandbox',
@@ -82,6 +84,10 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
   let context: BrowserContext | undefined;
   let stage = '创建浏览器页面';
   let navigationFailure: string | undefined;
+  let keyResult = '未发起';
+  let pollResult = '未发起';
+  const pendingScripts = new Map<Request, string>();
+  const failedScripts = new Set<string>();
   const remaining = () => Math.max(1, 38_000 - (Date.now() - startedAt));
 
   try {
@@ -95,12 +101,6 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       const type = route.request().resourceType();
       return ['image', 'media', 'font'].includes(type) ? route.abort() : route.continue();
     });
-    page.on('requestfailed', (request) => {
-      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-        navigationFailure = request.failure()?.errorText;
-      }
-    });
-
     const session: BrowserQrSession = {
       context,
       page,
@@ -110,23 +110,58 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       cookie: null,
     };
 
+    page.on('requestfailed', (request) => {
+      const failure = request.failure()?.errorText ?? '请求失败';
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+        navigationFailure = failure;
+      }
+      const host = pendingScripts.get(request);
+      if (host) {
+        pendingScripts.delete(request);
+        failedScripts.add(`${host} ${failure}`);
+      }
+      const path = new URL(request.url()).pathname;
+      if (path === KEY_PATH && !session.unikey) keyResult = failure;
+      if (path === POLL_PATH) pollResult = failure;
+    });
+    page.on('requestfinished', (request) => pendingScripts.delete(request));
+
     page.on('request', (request) => {
-      const chainId = request.headers()['x-login-chain-id'];
-      if (chainId && !session.chainId) session.chainId = chainId;
+      const { hostname, pathname } = new URL(request.url());
+      if (request.resourceType() === 'script' && hostname) {
+        pendingScripts.set(request, hostname);
+      }
+      if (pathname === KEY_PATH && !session.unikey) keyResult = '已发起，等待响应';
+      if (pathname === POLL_PATH) {
+        const chainId = request.headers()['x-login-chain-id'];
+        if (chainId && !session.chainId) session.chainId = chainId;
+        pollResult = chainId ? '已发起，带链路标识' : '已发起，缺少链路标识';
+      }
     });
 
     page.on('response', (response) => {
-      const url = response.url();
-      if (url.includes('/weapi/login/qrcode/unikey')) {
+      const { hostname, pathname } = new URL(response.url());
+      const status = response.status();
+      if (response.request().resourceType() === 'script' && status >= 400) {
+        failedScripts.add(`${hostname} HTTP ${status}`);
+      }
+      if (pathname === KEY_PATH) {
+        keyResult = `HTTP ${status}`;
         response
           .json()
-          .then((body: { unikey?: string }) => {
-            if (body?.unikey && !session.unikey) session.unikey = body.unikey;
+          .then((body: { code?: number; unikey?: string; data?: { unikey?: string } }) => {
+            const code = Number.isInteger(body?.code) ? `，网易云状态码 ${body.code}` : '';
+            const key = body?.data?.unikey ?? body?.unikey;
+            if (response.ok() && typeof key === 'string' && key && !session.unikey) {
+              session.unikey = key;
+            }
+            keyResult = `HTTP ${status}${code}，${key ? '已返回二维码标识' : '缺少二维码标识'}`;
           })
-          .catch(() => undefined);
+          .catch(() => { keyResult = `HTTP ${status}，响应无法解析为 JSON`; });
         return;
       }
-      if (!url.includes('/weapi/login/qrcode/client/login')) return;
+      if (pathname !== POLL_PATH) return;
+      pollResult = `HTTP ${status}，${session.chainId ? '已有链路标识' : '缺少链路标识'}`;
       response
         .json()
         .then(async (body: { code?: number }) => {
@@ -150,7 +185,8 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       timeout: Math.min(20_000, remaining()),
     });
     if (!response?.ok()) {
-      throw new Error(`HTTP ${response?.status() ?? 'unknown'}`);
+      navigationFailure = `HTTP ${response?.status() ?? 'unknown'}`;
+      throw new Error('Unexpected login page response');
     }
     stage = '等待官网二维码';
     const deadline = Date.now() + Math.min(12_000, remaining());
@@ -158,7 +194,15 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       await sleep(200);
     }
 
-    if (!session.unikey || !session.chainId) throw new Error('missing QR session');
+    if (!session.unikey || !session.chainId) {
+      const scriptFailures = [...failedScripts].slice(0, 5).join(', ') || '无';
+      const scriptsWaiting = [...new Set(pendingScripts.values())].slice(0, 5).join(', ') || '无';
+      logger.warn(
+        `官网二维码未就绪，耗时 ${Date.now() - startedAt}ms。取码：${keyResult}。轮询：${pollResult}。脚本失败：${scriptFailures}。脚本待完成：${scriptsWaiting}`,
+      );
+      await closeQrSession(session);
+      return null;
+    }
     return session;
   } catch (error) {
     const reason = navigationFailure ?? (error instanceof Error ? error.name : 'unknown');
