@@ -1,6 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Seo } from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
+import { ROBOTS_NOINDEX } from '../lib/seo';
+
+const CRUMBS = [
+  { name: '首页', path: '/' },
+  { name: '登录', path: '/login' },
+];
 
 export function Login() {
   const { signIn } = useAuth();
@@ -28,6 +35,12 @@ export function Login() {
 
   return (
     <div className="auth">
+      <Seo
+        title="登录"
+        description="登录渡口，继续整理和迁移你的 QQ 音乐、网易云音乐与 Apple Music 歌单。"
+        robots={ROBOTS_NOINDEX}
+        crumbs={CRUMBS}
+      />
       <div className="auth-head">
         <span className="eyebrow">渡口 · 账号</span>
         <h1>回到渡口</h1>

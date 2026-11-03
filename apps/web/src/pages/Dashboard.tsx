@@ -2,12 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Upload } from '../components/Icons';
 import { EmptyState } from '../components/EmptyState';
+import { Seo } from '../components/Seo';
 import { LoadingBlock } from '../components/Loading';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { formatRelative } from '../lib/format';
 import { platformName } from '../lib/platforms';
+import { ROBOTS_NOINDEX } from '../lib/seo';
 
 export function Dashboard() {
   const { user } = useAuth();
@@ -22,6 +24,11 @@ export function Dashboard() {
 
   return (
     <div className="page">
+      <Seo
+        title="我的歌单"
+        description="管理已导入的歌单，查看曲目数量与更新时间，继续迁移到 QQ 音乐、网易云音乐或 Apple Music。"
+        robots={ROBOTS_NOINDEX}
+      />
       <div className="page-head">
         <div>
           <span className="eyebrow">你的迁移</span>

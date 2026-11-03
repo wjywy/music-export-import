@@ -2,20 +2,261 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>渡口 · 把歌单，渡到对岸</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <title>渡口 Dukou · QQ 音乐 / 网易云音乐 / Apple Music 歌单迁移</title>
     <meta
       name="description"
-      content="网易云音乐、QQ 音乐、酷狗、酷我、Apple Music 之间的歌单导入、跨平台匹配与分享。"
+      content="渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。支持大歌单、分段导入，登录态加密保存，可随时断开。"
+    />
+    <meta name="author" content="渡口 Dukou" />
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     />
     <meta name="theme-color" content="#f5f4ed" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23f5f4ed'/%3E%3Cg fill='none' stroke='%231B365D' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M5 18c3 3 7 4.5 11 4.5S24 21 27 18'/%3E%3Cpath d='M16 6v11'/%3E%3Cpath d='M16 7l7 5h-7'/%3E%3C/g%3E%3C/svg%3E"
+    <meta name="color-scheme" content="light" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="application-name" content="渡口 Dukou" />
+    <meta name="apple-mobile-web-app-title" content="渡口" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <link rel="canonical" href="https://a2a-platform.com/tool/music/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://a2a-platform.com/tool/music/" />
+    <link rel="alternate" hreflang="x-default" href="https://a2a-platform.com/tool/music/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="渡口 Dukou" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:title" content="渡口 Dukou · QQ 音乐 / 网易云音乐 / Apple Music 歌单迁移" />
+    <meta
+      property="og:description"
+      content="渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。"
     />
+    <meta property="og:url" content="https://a2a-platform.com/tool/music/" />
+    <meta property="og:image" content="https://a2a-platform.com/tool/music/og-image.png" />
+    <meta property="og:image:secure_url" content="https://a2a-platform.com/tool/music/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="渡口 Dukou — 把歌单，渡到对岸" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="渡口 Dukou · QQ 音乐 / 网易云音乐 / Apple Music 歌单迁移" />
+    <meta
+      name="twitter:description"
+      content="渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。"
+    />
+    <meta name="twitter:image" content="https://a2a-platform.com/tool/music/og-image.png" />
+    <meta name="twitter:image:alt" content="渡口 Dukou — 把歌单，渡到对岸" />
+
+    <script type="application/ld+json" id="seo-structured-data">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://a2a-platform.com/tool/music/#organization",
+            "name": "渡口 Dukou",
+            "alternateName": "渡口",
+            "url": "https://a2a-platform.com/tool/music/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://a2a-platform.com/tool/music/icon-512.png",
+              "width": 512,
+              "height": 512
+            }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://a2a-platform.com/tool/music/#website",
+            "url": "https://a2a-platform.com/tool/music/",
+            "name": "渡口 Dukou",
+            "alternateName": "Dukou",
+            "description": "渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。支持大歌单、分段导入，登录态加密保存，可随时断开。",
+            "inLanguage": "zh-CN",
+            "publisher": { "@id": "https://a2a-platform.com/tool/music/#organization" }
+          },
+          {
+            "@type": "WebPage",
+            "@id": "https://a2a-platform.com/tool/music/#webpage",
+            "url": "https://a2a-platform.com/tool/music/",
+            "name": "渡口 Dukou · QQ 音乐 / 网易云音乐 / Apple Music 歌单迁移",
+            "description": "渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。支持大歌单、分段导入，登录态加密保存，可随时断开。",
+            "inLanguage": "zh-CN",
+            "isPartOf": { "@id": "https://a2a-platform.com/tool/music/#website" },
+            "about": { "@id": "https://a2a-platform.com/tool/music/#webapplication" },
+            "primaryImageOfPage": {
+              "@type": "ImageObject",
+              "url": "https://a2a-platform.com/tool/music/og-image.png"
+            }
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://a2a-platform.com/tool/music/#webapplication",
+            "name": "渡口 Dukou",
+            "alternateName": "Dukou",
+            "url": "https://a2a-platform.com/tool/music/",
+            "description": "渡口把 QQ 音乐、网易云音乐、Apple Music 的公开歌单迁移到另一个平台：粘贴链接，自动匹配曲目，扫码授权后一键写进你的账号。支持大歌单、分段导入，登录态加密保存，可随时断开。",
+            "applicationCategory": "MultimediaApplication",
+            "applicationSubCategory": "歌单迁移工具",
+            "operatingSystem": "Web",
+            "browserRequirements": "需要支持 ES2022 的现代浏览器",
+            "inLanguage": "zh-CN",
+            "isAccessibleForFree": true,
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "CNY"
+            },
+            "featureList": [
+              "QQ 音乐、网易云音乐歌单互相迁移",
+              "通过 Soundiiz 免费导入 Apple Music",
+              "Apple Music MusicKit 站内直写",
+              "自动匹配曲名、歌手与时长",
+              "支持按页读取的大歌单",
+              "扫码授权，登录态加密保存"
+            ],
+            "screenshot": "https://a2a-platform.com/tool/music/og-image.png",
+            "publisher": { "@id": "https://a2a-platform.com/tool/music/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://a2a-platform.com/tool/music/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "能把网易云音乐的歌单迁移到 QQ 音乐吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "可以。粘贴网易云音乐的公开歌单链接，渡口会读取曲名、歌手、专辑和顺序，匹配后在你的 QQ 音乐账号里新建一张歌单。反向从 QQ 音乐迁移到网易云音乐也支持。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "可以把歌单迁移到 Apple Music 吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "可以。没有配置 Apple 开发者 token 时，渡口通过 Soundiiz 免费生成导入链接，超过 200 首会自动分段；配置开发者 token 后，可以在站内用 MusicKit 授权并直接写入资料库。也可以下载 TXT 曲目表，用 TuneMyMusic 手动导入。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "迁移会改动我原来的歌单吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "不会。渡口只读取公开歌单的内容，然后在目标平台新建一张歌单；源平台的歌单不会被修改、移动或删除。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "需要安装 App 或浏览器插件吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "不需要。渡口是浏览器里打开的网页工具。写入 QQ 音乐或网易云音乐时，用手机 App 扫码授权一次即可；登录态用 AES-256-GCM 加密保存，也可以在迁移面板里随时断开。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "大歌单也能迁移吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "可以。QQ 音乐和网易云音乐按每页 1000 首读取，网易云单张歌单上限 10,000 首；Apple Music 免费导入超过 200 首会自动拆成多段链接，逐段打开即可。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "支持哪些平台之间的迁移？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "来源支持 QQ 音乐、网易云音乐和 Apple Music 公开歌单；目标支持 QQ 音乐、网易云音乐和 Apple Music，共三个平台。"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <noscript>
+      <style>
+        body {
+          margin: 0;
+          background: #f5f4ed;
+          color: #141413;
+          font-family: "Songti SC", "Noto Serif SC", Georgia, serif;
+          line-height: 1.7;
+        }
+        .nojs {
+          max-width: 720px;
+          margin: 0 auto;
+          padding: 64px 24px 96px;
+        }
+        .nojs-eyebrow {
+          font-size: 12px;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          color: #6b6a64;
+        }
+        .nojs h1 {
+          font-size: 40px;
+          font-weight: 500;
+          line-height: 1.2;
+          margin: 16px 0 20px;
+        }
+        .nojs h2 {
+          font-size: 22px;
+          font-weight: 500;
+          margin: 40px 0 12px;
+          padding-top: 24px;
+          border-top: 1px solid #e8e6dc;
+        }
+        .nojs p,
+        .nojs li {
+          color: #3d3d3a;
+        }
+        .nojs ul,
+        .nojs ol {
+          padding-left: 20px;
+        }
+        .nojs a {
+          color: #1b365d;
+        }
+      </style>
+    </noscript>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <div class="nojs">
+        <p class="nojs-eyebrow">渡口 Dukou</p>
+        <h1>把歌单，渡到对岸。</h1>
+        <p>
+          渡口是一个在浏览器里使用的歌单迁移工具：粘贴 QQ 音乐、网易云音乐或 Apple Music
+          的公开歌单链接，自动匹配曲目，再写进你在目标平台的新歌单。
+        </p>
+        <h2>支持平台</h2>
+        <ul>
+          <li>QQ 音乐与网易云音乐歌单双向迁移</li>
+          <li>QQ 音乐 / 网易云音乐迁移到 Apple Music（Soundiiz、TuneMyMusic 或 MusicKit）</li>
+          <li>Apple Music 公开歌单迁移到 QQ 音乐 / 网易云音乐</li>
+        </ul>
+        <h2>怎么用</h2>
+        <ol>
+          <li>注册并登录渡口。</li>
+          <li>粘贴一张公开歌单链接，选择目标平台。</li>
+          <li>扫码或授权一次，确认匹配结果后写入新歌单。</li>
+        </ol>
+        <p>
+          渡口的交互界面需要 JavaScript。请在浏览器中启用 JavaScript 后刷新页面，或
+          <a href="./login">登录</a> / <a href="./register">创建账号</a>。
+        </p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,6 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Seo } from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
+import { ROBOTS_NOINDEX } from '../lib/seo';
+
+const CRUMBS = [
+  { name: '首页', path: '/' },
+  { name: '创建账号', path: '/register' },
+];
 
 export function Register() {
   const { signUp } = useAuth();
@@ -33,6 +40,12 @@ export function Register() {
 
   return (
     <div className="auth">
+      <Seo
+        title="创建账号"
+        description="创建渡口账号，把 QQ 音乐、网易云音乐和 Apple Music 的歌单迁移到另一个平台。"
+        robots={ROBOTS_NOINDEX}
+        crumbs={CRUMBS}
+      />
       <div className="auth-head">
         <span className="eyebrow">渡口 · 新账号</span>
         <h1>在这里靠岸</h1>

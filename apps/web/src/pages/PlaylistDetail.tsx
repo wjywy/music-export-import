@@ -6,12 +6,14 @@ import { Dialog } from '../components/Dialog';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingBlock } from '../components/Loading';
 import { PlaylistCover } from '../components/PlaylistCover';
+import { Seo } from '../components/Seo';
 import { TrackTable } from '../components/TrackTable';
 import { TransferDialog } from '../components/TransferDialog';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { formatDate } from '../lib/format';
 import { platformName } from '../lib/platforms';
+import { compactTitle, ROBOTS_NOINDEX } from '../lib/seo';
 
 export function PlaylistDetail() {
   const { id } = useParams<{ id: string }>();
@@ -37,11 +39,27 @@ export function PlaylistDetail() {
     onError: () => toast('删除失败，请重试。', 'error'),
   });
 
-  if (detail.isLoading) return <LoadingBlock label="正在读取歌单…" />;
+  if (detail.isLoading) {
+    return (
+      <>
+        <Seo
+          title="歌单"
+          description="正在读取歌单内容，随后可以迁移到 QQ 音乐、网易云音乐或 Apple Music。"
+          robots={ROBOTS_NOINDEX}
+        />
+        <LoadingBlock label="正在读取歌单…" />
+      </>
+    );
+  }
 
   if (detail.isError || !detail.data) {
     return (
       <div className="page page--narrow">
+        <Seo
+          title="没有找到这张歌单"
+          description="这张歌单可能已经删除，或者不属于当前账号。"
+          robots={ROBOTS_NOINDEX}
+        />
         <EmptyState title="没有找到这张歌单" text="它可能已经删除，或者不属于当前账号。">
           <Link className="btn btn-ghost" to="/app">
             回到歌单
@@ -55,6 +73,11 @@ export function PlaylistDetail() {
 
   return (
     <div className="page">
+      <Seo
+        title={compactTitle(playlist.title)}
+        description={`在渡口查看《${playlist.title}》的曲目，并迁移到 QQ 音乐、网易云音乐或 Apple Music。`}
+        robots={ROBOTS_NOINDEX}
+      />
       <div className="breadcrumb">
         <Link to="/app">歌单</Link>
         <span aria-hidden="true">/</span>

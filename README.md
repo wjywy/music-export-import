@@ -38,6 +38,12 @@ QQ / 网易云写入使用平台非公开接口，可能受风控或改版影响
 
 `/tool/` 是公共工具目录入口，目前收录渡口与拾句，静态文件在 [tool/](tool/)，部署与新增工具说明见 [tool/README.md](tool/README.md)。
 
+## SEO
+
+`/tool/music/` 内置完整的 SEO 能力：静态 head 与路由级 head、canonical / hreflang、Open Graph / Twitter Card、JSON-LD（Organization / WebSite / WebPage / WebApplication / BreadcrumbList / FAQPage）、`robots.txt`、`sitemap.xml`、PWA manifest、1200 × 630 分享图，以及不执行 JS 时的可读兜底内容。
+
+构建时会自动跑 15 项 SEO 校验（`apps/web/scripts/check-seo.mjs`），标签或文件缺失会直接让镜像构建失败。上线后的 sitemap 提交、根域名 `robots.txt` 配置、验收命令与当前 SPA 方案的边界见 [docs/seo.md](docs/seo.md)。
+
 ## 技术栈
 
 | 层 | 选择 |

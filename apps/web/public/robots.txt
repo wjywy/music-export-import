@@ -1,0 +1,13 @@
+# 渡口 Dukou · https://a2a-platform.com/tool/music/
+# This file lives under the app subpath. Crawlers read /robots.txt at the
+# domain root, so the site-level robots.txt should also point at the sitemap:
+#   Sitemap: https://a2a-platform.com/tool/music/sitemap.xml
+
+User-agent: *
+Allow: /tool/music/$
+Disallow: /tool/music/login
+Disallow: /tool/music/register
+Disallow: /tool/music/app
+Disallow: /tool/music/app/
+
+Sitemap: https://a2a-platform.com/tool/music/sitemap.xml

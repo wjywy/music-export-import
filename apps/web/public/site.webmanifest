@@ -1,0 +1,33 @@
+{
+  "name": "渡口 Dukou · 歌单迁移",
+  "short_name": "渡口",
+  "description": "把 QQ 音乐、网易云音乐和 Apple Music 的公开歌单迁移到另一个平台。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f5f4ed",
+  "theme_color": "#f5f4ed",
+  "categories": ["music", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

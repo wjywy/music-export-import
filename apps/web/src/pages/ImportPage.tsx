@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Upload } from '../components/Icons';
+import { Seo } from '../components/Seo';
 import { useToast } from '../context/ToastContext';
 import { api } from '../lib/api';
 import { detectPlatform, PLATFORM_INFO } from '../lib/platforms';
+import { ROBOTS_NOINDEX } from '../lib/seo';
 import type { AccountQr, AccountQrStatus, ImportJob, Platform } from '../lib/types';
 
 const STATUS_LABEL: Record<ImportJob['status'], string> = {
@@ -184,6 +186,11 @@ export function ImportPage() {
 
   return (
     <div className="page page--narrow">
+      <Seo
+        title="导入歌单"
+        description="粘贴 QQ 音乐、网易云音乐或 Apple Music 的公开歌单链接，导入后自动匹配并迁移到目标平台。"
+        robots={ROBOTS_NOINDEX}
+      />
       <div className="page-head">
         <div>
           <span className="eyebrow">导入</span>

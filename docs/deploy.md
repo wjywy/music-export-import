@@ -163,6 +163,19 @@ curl -fsS https://a2a-platform.com/tool/music/api/health
 - 直接刷新 `/tool/music/app` 不 404；
 - 注册、导入、扫码迁移走通。
 
+SEO 相关：
+
+```bash
+curl -fsS https://a2a-platform.com/tool/music/ | grep -q 'rel="canonical"'
+curl -fsS https://a2a-platform.com/tool/music/robots.txt
+curl -fsS https://a2a-platform.com/tool/music/sitemap.xml
+curl -fsSI https://a2a-platform.com/tool/music/og-image.png
+```
+
+根域名 `https://a2a-platform.com/robots.txt` 里还应有一行
+`Sitemap: https://a2a-platform.com/tool/music/sitemap.xml`。完整的 SEO 说明、
+结构化数据与搜索引擎提交步骤见 [docs/seo.md](seo.md)。
+
 ## 五、更新
 
 ```bash
