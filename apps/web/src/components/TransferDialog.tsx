@@ -5,7 +5,7 @@ import { Dialog } from './Dialog';
 import { Loading } from './Loading';
 import { PushProgress } from './PushProgress';
 import { useToast } from '../context/ToastContext';
-import { ACCOUNT_QR_TIMEOUT_SECONDS, api } from '../lib/api';
+import { ACCOUNT_QR_TIMEOUT_SECONDS, ApiError, api } from '../lib/api';
 import {
   authorizeAppleMusic,
   preloadAppleMusic,
@@ -390,9 +390,15 @@ export function TransferDialog({
           return;
         }
         setQrState(status.status);
-        timer = window.setTimeout(tick, 1000);
-      } catch {
+        timer = window.setTimeout(tick, 2000);
+      } catch (error) {
         if (cancelled) return;
+        if (error instanceof ApiError && error.code === 'NETEASE_PROFILE_FORBIDDEN') {
+          setQr(null);
+          setQrState('idle');
+          setAccountError(error.message);
+          return;
+        }
         if (Date.now() >= new Date(qr.expiresAt).getTime()) {
           setQrState('expired');
           setAccountError('二维码已过期，请重新生成。');
@@ -401,7 +407,7 @@ export function TransferDialog({
         setAccountError(
           '检查登录状态暂时失败，正在重试…',
         );
-        timer = window.setTimeout(tick, 1000);
+        timer = window.setTimeout(tick, 2000);
       }
     };
 

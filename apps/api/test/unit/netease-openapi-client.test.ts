@@ -14,7 +14,7 @@ test('OpenAPI GET signatures verify independently and never transmit the private
   let verified = false;
   t.mock.method(globalThis, 'fetch', async (input: URL, options: RequestInit) => {
     const url = new URL(String(input));
-    assert.equal(url.origin, 'https://openncm.music.163.com');
+    assert.equal(url.origin, 'https://openapi.music.163.com');
     assert.equal(url.pathname, API.profile);
     assert.equal(options.redirect, 'error');
     assert.ok(options.signal);
@@ -94,4 +94,38 @@ test('transport, configuration and upstream errors do not echo credentials', asy
   assert.equal(fetchMock.mock.callCount(), calls);
   assert.throws(() => client.token({ accessToken: 'missing-refresh' }), /完整/);
   assert.ok(client.token({ accessToken: 'access', refreshToken: 'refresh', expiresTime: 3600 }).expiresAt > Date.now());
+});
+
+
+test('QR refresh reuses an anonymous token and a stable alphanumeric device per user', async (t) => {
+  let anonymousCalls = 0;
+  const pollTokens: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: URL, options: RequestInit) => {
+    const url = new URL(String(input));
+    const params = options.method === 'POST' ? JSON.parse(options.body as string) : Object.fromEntries(url.searchParams);
+    const device = JSON.parse(params.device);
+    assert.match(device.deviceId, /^[a-zA-Z0-9]{1,64}$/);
+    if (url.pathname === API.anonymous) {
+      anonymousCalls++;
+      return Response.json({ code: 200, data: { accessToken: 'anon+/=' } });
+    }
+    if (url.pathname === API.poll) {
+      pollTokens.push(params.accessToken);
+      assert.deepEqual(JSON.parse(params.bizContent), { key: 'qr', clientId: settings.NETEASE_OPENAPI_APP_ID });
+      return Response.json({ code: 200, data: { status: 801 } });
+    }
+    return Response.json({ code: 200, data: { uniKey: 'qr', qrCodeUrl: 'https://163cn.tv/official' } });
+  });
+  const client = new NeteaseOpenApiClient(new ConfigService(settings));
+  const first = await client.startQr('owner');
+  const second = await client.startQr('owner');
+  await client.poll(first.key, first.context);
+  await client.poll(second.key, second.context);
+  assert.equal(anonymousCalls, 1);
+  assert.deepEqual(pollTokens, ['anon+/=', 'anon+/=']);
+  assert.equal(first.context.device.deviceId, client.newDevice('owner').deviceId);
+  assert.notEqual(first.context.device.deviceId, client.newDevice('other').deviceId);
+  assert.throws(() => client.token({ accessToken: 'null', refreshToken: 'null', expireTime: 604800 }), /完整/);
+  const long = 'a+/='.repeat(150);
+  assert.equal(client.token({ accessToken: long, refreshToken: long, expireTime: 604800 }).accessToken, long);
 });

@@ -33,6 +33,7 @@ interface PendingQr {
   timer: NodeJS.Timeout;
   cancelled: boolean;
   polling?: Promise<AccountQrStatus>;
+  authorizedToken?: OpenApiToken;
 }
 
 const PAGE_SIZE = 500;
@@ -92,7 +93,7 @@ export class NeteaseOpenApiAccountService {
         this.remove(key);
       }
       if (this.pending.size + this.starts.size >= 200) throw new ServiceUnavailableException('扫码服务繁忙，请稍后重试。');
-      const next = await this.client.startQr();
+      const next = await this.client.startQr(userId);
       this.assertActive(userId);
       const image = await QRCode.toDataURL(next.url, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
       this.assertActive(userId);
@@ -116,18 +117,32 @@ export class NeteaseOpenApiAccountService {
     }
     if (entry.polling) return entry.polling;
     const promise = this.run(userId, async (): Promise<AccountQrStatus> => {
-      const data = await this.client.poll(key, entry.context);
-      if (entry.cancelled || this.disconnecting.has(userId)) return { status: 'expired' };
-      if (Number(data?.status) === 801) return { status: 'waiting' };
-      if (Number(data?.status) === 802) return { status: 'scanned' };
-      if (Number(data?.status) !== 803) {
-        this.remove(key);
-        return { status: 'expired', message: '网易云二维码已失效，请重新生成。' };
+      if (!entry.authorizedToken) {
+        const data = await this.client.poll(key, entry.context);
+        if (entry.cancelled || this.disconnecting.has(userId)) return { status: 'expired' };
+        if (Number(data?.status) === 801) return { status: 'waiting' };
+        if (Number(data?.status) === 802) return { status: 'scanned' };
+        if (Number(data?.status) === 800) {
+          this.remove(key);
+          return { status: 'expired', message: '网易云二维码已失效，请重新生成。' };
+        }
+        if (Number(data?.status) !== 803) {
+          throw new BadGatewayException('网易云扫码状态异常，请稍后重试。');
+        }
+        // 803 consumes this key. Retrying profile/storage must never poll it again.
+        entry.authorizedToken = this.client.token(data.accessToken);
       }
-      const token = this.client.token(data.accessToken);
+      const token = entry.authorizedToken;
       const session: OfficialSession = { ...token, device: entry.context.device,
         kind: 'openapi', appId: this.client.appId, accountId: '', nickname: null };
-      const profile = await this.client.request<{ id?: string; nickname?: string }>(API.profile, {}, session);
+      const profile = await this.client.request<{ id?: string; nickname?: string }>(API.profile, {}, session)
+        .catch((error: unknown) => {
+          if (error instanceof NeteaseOpenApiError && error.upstreamCode === 301) {
+            throw new BadGatewayException({ code: 'NETEASE_PROFILE_FORBIDDEN',
+              message: '扫码授权已成功，但网易云拒绝读取此账号资料（301：用户未授权当前接口）。请检查应用的账号及接口授权范围。' });
+          }
+          throw error;
+        });
       if (!profile?.id) throw new BadGatewayException('网易云没有返回已授权的账号信息。');
       if (entry.cancelled || this.disconnecting.has(userId)) return { status: 'expired' };
       session.accountId = profile.id;

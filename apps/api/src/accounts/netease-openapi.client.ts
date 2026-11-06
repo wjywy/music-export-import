@@ -1,6 +1,6 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createPrivateKey, createSign, randomUUID, type KeyObject } from 'node:crypto';
+import { createHash, createPrivateKey, createSign, randomUUID, type KeyObject } from 'node:crypto';
 import { arch, networkInterfaces, platform, release } from 'node:os';
 
 // Endpoint and parameter contracts match @music163/ncm-cli's signed API manifest.
@@ -68,7 +68,7 @@ export class NeteaseOpenApiError extends BadGatewayException {
   }
 }
 
-const ORIGIN = 'https://openncm.music.163.com';
+const ORIGIN = 'https://openapi.music.163.com';
 const QR_LIFETIME_MS = 300_000;
 
 @Injectable()
@@ -78,6 +78,7 @@ export class NeteaseOpenApiClient {
   private readonly appKey: string;
   private readonly privateKey: string;
   private signingKey?: KeyObject;
+  private readonly anonymousContexts = new Map<string, Promise<OpenApiContext>>();
 
   constructor(config: ConfigService) {
     const qrProvider = config.get<string>('NETEASE_QR_PROVIDER', 'browser').trim() || 'browser';
@@ -94,7 +95,7 @@ export class NeteaseOpenApiClient {
     return Boolean(this.appId || this.appKey || this.privateKey);
   }
 
-  newDevice(): OpenApiDevice {
+  newDevice(subject?: string): OpenApiDevice {
     const clientIp = Object.values(networkInterfaces()).flat()
       .find((address) => address?.family === 'IPv4' && !address.internal)?.address ?? '127.0.0.1';
     return {
@@ -102,17 +103,34 @@ export class NeteaseOpenApiClient {
       deviceType: 'openapi', os: 'ncmcli', appVer: '0.1.0', channel: 'ncmcli',
       model: `${platform()}_${arch()}`, brand: 'ncmcli', osVer: release(),
       clientIp,
-      deviceId: `dukou_${randomUUID()}`,
+      deviceId: subject
+        ? createHash('sha256').update(JSON.stringify([this.appId, subject])).digest('hex')
+        : randomUUID().replace(/-/g, ''),
     };
   }
 
-  async startQr() {
-    const device = this.newDevice();
-    const anonymous = await this.request<TokenResponse>(NETEASE_OPENAPI.anonymous,
-      { clientId: this.appId }, { device, accessToken: '' }, 'POST');
-    if (!anonymous?.accessToken) throw new BadGatewayException('网易云没有返回匿名授权令牌。');
-    const context: OpenApiContext = { device, accessToken: anonymous.accessToken };
-    const expiresAt = Date.now() + QR_LIFETIME_MS;
+  private anonymousContext(device: OpenApiDevice): Promise<OpenApiContext> {
+    const existing = this.anonymousContexts.get(device.deviceId);
+    if (existing) return existing;
+    const pending = this.request<TokenResponse>(NETEASE_OPENAPI.anonymous,
+      { clientId: this.appId }, { device, accessToken: '' }, 'POST').then((anonymous) => {
+      if (!anonymous?.accessToken || anonymous.accessToken === 'null') {
+        throw new BadGatewayException('网易云没有返回匿名授权令牌。');
+      }
+      return { device, accessToken: anonymous.accessToken };
+    }).catch((error) => {
+      if (this.anonymousContexts.get(device.deviceId) === pending) this.anonymousContexts.delete(device.deviceId);
+      throw error;
+    });
+    if (this.anonymousContexts.size >= 200) {
+      this.anonymousContexts.delete(this.anonymousContexts.keys().next().value!);
+    }
+    this.anonymousContexts.set(device.deviceId, pending);
+    return pending;
+  }
+
+  async startQr(subject?: string) {
+    const context = await this.anonymousContext(this.newDevice(subject));
     const data = await this.request<{ uniKey?: string; qrCodeUrl?: string }>(
       NETEASE_OPENAPI.qr, { type: 2, expiredKey: '300' }, context);
     if (!data?.uniKey || typeof data.qrCodeUrl !== 'string') {
@@ -123,7 +141,7 @@ export class NeteaseOpenApiClient {
       throw new BadGatewayException('网易云返回的二维码链接无效。');
     }
     if (url.protocol !== 'https:') throw new BadGatewayException('网易云返回的二维码链接无效。');
-    return { key: data.uniKey, url: url.href, context, expiresAt };
+    return { key: data.uniKey, url: url.href, context, expiresAt: Date.now() + QR_LIFETIME_MS };
   }
 
   poll(key: string, context: OpenApiContext) {
@@ -133,7 +151,8 @@ export class NeteaseOpenApiClient {
 
   token(data: TokenResponse | undefined): OpenApiToken {
     const seconds = Number(data?.expireTime ?? data?.expiresTime ?? data?.expireIn);
-    if (!data?.accessToken || !data.refreshToken || !Number.isFinite(seconds) || seconds <= 0) {
+    if (!data?.accessToken || data.accessToken === 'null' || !data.refreshToken ||
+        data.refreshToken === 'null' || !Number.isFinite(seconds) || seconds <= 0) {
       throw new BadGatewayException('网易云没有返回完整的官方授权令牌。');
     }
     return { accessToken: data.accessToken, refreshToken: data.refreshToken,

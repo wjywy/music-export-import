@@ -268,3 +268,25 @@ test('stream parser handles fragmented UTF-8, heartbeat frames and a missing res
   expect(result.progress).toEqual([35]);
   expect(result.missing).toContain('进度连接中断');
 });
+
+
+test('QR profile permission failure shows the actual error and stops polling', async ({ page }) => {
+  let checks = 0;
+  await page.route('**/api/accounts/netease/qr', (route) => route.fulfill({ json: {
+    platform: 'netease', key: 'permission-login', expiresAt: new Date(Date.now() + 300000).toISOString(),
+    image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+  } }));
+  await page.route('**/api/accounts/netease/qr/permission-login', (route) => {
+    checks++;
+    return route.fulfill({ status: 502, json: { code: 'NETEASE_PROFILE_FORBIDDEN',
+      message: '扫码授权已成功，但网易云拒绝读取此账号资料（301：用户未授权当前接口）。' } });
+  });
+  const dialog = await openMigration(page, 'http://127.0.0.1/unused', false, () => false);
+  await dialog.getByRole('button', { name: '扫码连接 网易云音乐' }).click();
+  await expect(dialog.getByText(/扫码授权已成功，但网易云拒绝读取此账号资料/)).toBeVisible();
+  await expect(dialog.getByRole('img', { name: '网易云音乐 登录二维码' })).toHaveCount(0);
+  await expect(dialog.getByText('二维码已过期。', { exact: true })).toHaveCount(0);
+  await page.clock.install();
+  await page.clock.fastForward(10000);
+  expect(checks).toBe(1);
+});

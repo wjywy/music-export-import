@@ -115,13 +115,15 @@ test('concurrent authorization polls validate and save only once', async (t) => 
   assert.equal(f.calls.filter((call) => call.path === API.profile).length, 1);
 });
 
-test('failed profile validation retains the owned code for a retry', async (t) => {
+test('profile retry never polls an already consumed single-use QR again', async (t) => {
   const f = fixture(t); const qr = await f.service.startQr('owner'); f.state(803);
   f.reply((path) => path === API.profile ? { code: 500, message: 'upstream failure' } : f.defaultReply(path));
   await assert.rejects(() => f.service.checkQr('owner', qr.key), /500/);
   assert.equal(f.rows.size, 0);
   f.reply(undefined);
+  f.state(800); // The provider consumes the key after returning 803.
   assert.equal((await f.service.checkQr('owner', qr.key)).status, 'authorized');
+  assert.equal(f.calls.filter((call) => call.path === API.poll).length, 1);
 });
 
 test('disconnect cancels late validation, waits for it and prevents reconnecting', async (t) => {
@@ -418,4 +420,19 @@ test('an unknown create response never falls back to adding to an existing playl
     sourceUrl: 'https://music.163.com/song?id=1', matches: [] }] } as unknown as PlaylistDetail;
   await assert.rejects(() => f.service.push('owner', detail), /歌单标识/);
   assert.equal(f.calls.filter((call) => call.path === API.add).length, 0);
+});
+
+
+test('profile permission denial is distinguished from QR expiry without polling a consumed key', async (t) => {
+  const f = fixture(t); const qr = await f.service.startQr('owner'); f.state(803);
+  f.reply((path) => path === API.profile ? { code: 301 } : f.defaultReply(path));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(() => f.service.checkQr('owner', qr.key), (error: unknown) => {
+      const body = (error as { getResponse(): { code: string; message: string } }).getResponse();
+      return body.code === 'NETEASE_PROFILE_FORBIDDEN' && body.message.includes('扫码授权已成功');
+    });
+    f.state(800);
+  }
+  assert.equal(f.calls.filter((call) => call.path === API.poll).length, 1);
+  assert.equal(f.rows.size, 0);
 });

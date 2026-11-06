@@ -72,7 +72,7 @@ APPLE_MUSIC_PRIVATE_KEY=
 
 多人使用的部署应保持 `NETEASE_QR_PROVIDER=browser`。用户在网易云 App 中扫描官网二维码并确认，渡口自动保存该用户的加密会话，无需手工复制 Cookie。二维码从生成起最多保留 2 分钟；官网可能提前使其失效。镜像已安装 Chromium，`CHROME_PATH` 可保持默认值。配置了 `NETEASE_OPENAPI_*` 也不会改变新二维码的来源。
 
-个人 CLI 模式需显式设置 `NETEASE_QR_PROVIDER=openapi`，二维码最多保留 5 分钟。个人应用的账号及接口授权范围有限，不能假定创建者申请一次 AppID 就允许任意用户扫码接入。`NETEASE_OPENAPI_*` 只在服务器配置。切换二维码模式不删除已有账号凭据，后续读写继续使用该账号原先保存的会话；断开后重新扫码才会使用新模式。真实应用凭证和用户授权令牌不要提交到仓库。
+官方 API 扫码需显式设置 `NETEASE_QR_PROVIDER=openapi`，使用 `https://openapi.music.163.com`，二维码最多保留 5 分钟。取码与轮询复用同一设备的匿名令牌，每 2 秒轮询一次；扫码成功后停止轮询，再读取账号资料。若资料接口返回 `301`，页面会说明账号资料授权受限，不会把它显示为二维码过期。个人应用的账号及接口授权范围有限，不能假定创建者申请一次 AppID 就允许任意用户扫码接入。`NETEASE_OPENAPI_*` 只在服务器配置。切换二维码模式不删除已有账号凭据，后续读写继续使用该账号原先保存的会话；断开后重新扫码才会使用新模式。真实应用凭证和用户授权令牌不要提交到仓库。
 
 Apple Music 的 `APPLE_MUSIC_*` 变量会传给 API 容器；`APPLE_MUSIC_PRIVATE_KEY` 里的 `$` 等字符不要做 shell 展开。配置后用 `GET /api/platforms/apple/config` 确认 `configured: true`。
 
