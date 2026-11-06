@@ -5,7 +5,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomBytes } from 'node:crypto';
 import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
 import { PlatformCredential } from '../common/entities/platform-credential.entity';
@@ -23,11 +22,11 @@ import {
   cookieValue,
   neteaseIdFromUrl,
   normalizeCookie,
-  scanLoginChainId,
   scanLoginUrl,
   uniqueNumericIds,
 } from './account.utils';
-import { closeQrSession, openQrSession, type BrowserQrSession } from './netease-qr-browser';
+import type { BrowserQrSession } from './netease-qr-browser';
+import { NeteaseQrPool } from './netease-qr-pool';
 
 type ApiResponse = {
   status?: number;
@@ -36,12 +35,6 @@ type ApiResponse = {
 };
 
 type ApiFunction = (query: Record<string, unknown>) => Promise<ApiResponse>;
-
-type RawRequest = (
-  uri: string,
-  data: Record<string, unknown>,
-  options: Record<string, unknown>,
-) => Promise<ApiResponse>;
 
 interface NeteaseApiModule {
   login_status: ApiFunction;
@@ -52,42 +45,38 @@ interface NeteaseApiModule {
 // NeteaseCloudMusicApi is a CommonJS package without TypeScript declarations.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const neteaseApi = require('NeteaseCloudMusicApi') as NeteaseApiModule;
-// The QR login has to mirror music.163.com exactly (type 1 + chainId), which
-// the high-level helpers do not expose, so those two calls use the raw client.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const neteaseRequest = require('NeteaseCloudMusicApi/util/request') as RawRequest;
 
 interface NeteaseSession {
   cookie: string;
   nickname: string | null;
 }
 
-const QR_TTL_MS = 5 * 60_000;
 const TRACK_BATCH = 500;
-
-const WEB_HEADERS: Record<string, string> = {
-  'x-os': 'web',
-  'x-channelsource': 'undefined',
-};
 
 @Injectable()
 export class NeteaseAccountService {
   private readonly browserStarts = new Map<string, Promise<AccountQr>>();
+  private readonly browserCompletions = new Map<
+    string,
+    { userId: string; completion: Promise<AccountQrStatus> }
+  >();
 
   private readonly browserSessions = new Map<
     string,
-    { userId: string; session: BrowserQrSession; timer: NodeJS.Timeout }
-  >();
-
-  private readonly pending = new Map<
-    string,
-    { cookie: string; chainId: string; expiresAt: number }
+    {
+      userId: string;
+      session: BrowserQrSession;
+      qr: AccountQr;
+      timer: NodeJS.Timeout;
+      completion?: Promise<AccountQrStatus>;
+    }
   >();
 
   constructor(
     @InjectRepository(PlatformCredential)
     private readonly credentials: Repository<PlatformCredential>,
     private readonly cipher: CredentialCipher,
+    private readonly qrPool: NeteaseQrPool,
   ) {}
 
   async cookieFor(userId: string): Promise<string | null> {
@@ -103,6 +92,7 @@ export class NeteaseAccountService {
       where: { userId, platform: 'netease' },
     });
     if (!row) {
+      this.qrPool.prepare();
       return {
         platform: 'netease',
         connected: false,
@@ -129,133 +119,78 @@ export class NeteaseAccountService {
   }
 
   async startQr(userId: string): Promise<AccountQr> {
-    if (process.env.CHROME_PATH?.trim()) {
-      const existing = this.browserStarts.get(userId);
-      if (existing) return existing;
-      const start = this.startBrowserQr(userId).finally(() => this.browserStarts.delete(userId));
-      this.browserStarts.set(userId, start);
-      return start;
-    }
-
-    this.cleanupPending();
-
-    // The request library regenerates these IDs on each call unless supplied.
-    // Keep one anonymous session from QR creation through confirmation.
-    const visitorId = randomBytes(32).toString('hex');
-    const visitorCookie = `_ntes_nuid=${visitorId}; _ntes_nnid=${visitorId},${Date.now()}`;
-    // type: 1 is what music.163.com itself uses for the web QR; the library
-    // default (3) is the legacy app flow that NetEase now flags.
-    const keyResponse = await neteaseRequest(
-      '/api/login/qrcode/unikey',
-      { type: 1 },
-      { crypto: 'weapi', cookie: visitorCookie, headers: WEB_HEADERS },
-    );
-    const keyBody = (keyResponse.body ?? {}) as {
-      unikey?: string;
-      data?: { unikey?: string };
-    };
-    const unikey = keyBody.data?.unikey ?? keyBody.unikey;
-    if (!unikey) {
-      throw new BadGatewayException('网易云没有返回二维码标识，请稍后重试。');
-    }
-
-    const cookie = normalizeCookie([visitorCookie, normalizeCookie(keyResponse.cookie)]);
-    const chainId = scanLoginChainId(cookie);
-    const url = scanLoginUrl(unikey, chainId);
-    const image = await QRCode.toDataURL(url, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 360,
-    });
-
-    this.pending.set(unikey, {
-      cookie,
-      chainId,
-      expiresAt: Date.now() + QR_TTL_MS,
-    });
-
-    return {
-      platform: 'netease',
-      key: unikey,
-      image,
-      url,
-      expiresAt: new Date(Date.now() + QR_TTL_MS),
-    };
+    const existing = this.browserStarts.get(userId);
+    if (existing) return existing;
+    const start = this.startBrowserQr(userId).finally(() => this.browserStarts.delete(userId));
+    this.browserStarts.set(userId, start);
+    return start;
   }
 
   async checkQr(userId: string, key: string): Promise<AccountQrStatus> {
     const browser = this.browserSessions.get(key);
     if (browser?.userId === userId) {
       const { session } = browser;
+      if (session.status === 'expired' || session.expiresAt <= Date.now()) {
+        await this.removeBrowserQr(key);
+        return { status: 'expired', message: session.message || '二维码已过期，请重新生成。' };
+      }
       if (session.status !== 'authorized') return { status: session.status };
       if (!session.cookie || !cookieValue(session.cookie, 'MUSIC_U')) {
         await this.removeBrowserQr(key);
         throw new BadGatewayException('网易云登录成功，但没有返回会话 Cookie。');
       }
-      const profile = await this.requireProfile(session.cookie);
-      await this.saveSession(userId, { cookie: session.cookie, nickname: profile.nickname });
-      await this.removeBrowserQr(key);
-      return { status: 'authorized', nickname: profile.nickname };
+      if (!browser.completion) {
+        const completion = this.completeBrowserQr(userId, key, session.cookie)
+          .finally(() => this.browserCompletions.delete(key));
+        this.browserCompletions.set(key, { userId, completion });
+        browser.completion = completion;
+      }
+      try {
+        return await browser.completion;
+      } catch (error) {
+        browser.completion = undefined;
+        throw error;
+      }
     }
 
-    const pending = this.pending.get(key);
-    if (!pending || pending.expiresAt < Date.now()) {
-      this.pending.delete(key);
-      return { status: 'expired', message: '二维码已过期，请重新生成。' };
-    }
+    return { status: 'expired', message: '二维码已过期，请重新生成。' };
+  }
 
-    const response = await neteaseRequest(
-      '/api/login/qrcode/client/login',
-      { key, type: 1 },
-      {
-        crypto: 'weapi',
-        cookie: pending.cookie || undefined,
-        headers: {
-          ...WEB_HEADERS,
-          'nm-gcore-status': '1',
-          'x-loginmethod': 'QrCode',
-          'x-login-chain-id': pending.chainId,
-        },
-      },
-    );
-    const body = (response.body ?? {}) as { code?: number; message?: string; cookie?: string };
-    const code = Number(body.code ?? 0);
-
-    if (code === 801) return { status: 'waiting' };
-    if (code === 802) return { status: 'scanned' };
-    if (code !== 803) {
-      this.pending.delete(key);
-      return { status: 'expired', message: body.message || '二维码已失效。' };
-    }
-
-    const cookie = normalizeCookie(body.cookie ?? response.cookie);
-    if (!cookie) {
-      throw new BadGatewayException('网易云登录成功，但没有返回会话 Cookie。');
-    }
-
-    const profile = await this.fetchProfile(cookie);
+  private async completeBrowserQr(
+    userId: string,
+    key: string,
+    cookie: string,
+  ): Promise<AccountQrStatus> {
+    const profile = await this.requireProfile(cookie);
     await this.saveSession(userId, { cookie, nickname: profile.nickname });
-    this.pending.delete(key);
+    await this.removeBrowserQr(key);
     return { status: 'authorized', nickname: profile.nickname };
   }
 
   private async startBrowserQr(userId: string): Promise<AccountQr> {
     for (const [key, entry] of this.browserSessions) {
-      if (entry.userId === userId) await this.removeBrowserQr(key);
+      if (entry.userId !== userId) continue;
+      if (entry.session.status !== 'expired' && entry.session.expiresAt > Date.now()) {
+        return entry.qr;
+      }
+      await this.removeBrowserQr(key);
     }
-    const session = await openQrSession();
-    if (!session) throw new BadGatewayException('无法打开网易云登录页，请稍后重试。');
+    const session = await this.qrPool.acquire();
 
     try {
       const url = scanLoginUrl(session.unikey, session.chainId);
       const image = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
-      const expiresAt = new Date(Date.now() + QR_TTL_MS);
-      const timer = setTimeout(() => void this.removeBrowserQr(session.unikey), QR_TTL_MS);
+      const expiresAt = new Date(session.expiresAt);
+      const qr: AccountQr = { platform: 'netease', key: session.unikey, image, url, expiresAt };
+      const timer = setTimeout(
+        () => void this.removeBrowserQr(session.unikey),
+        Math.max(0, session.expiresAt - Date.now()),
+      );
       timer.unref();
-      this.browserSessions.set(session.unikey, { userId, session, timer });
-      return { platform: 'netease', key: session.unikey, image, url, expiresAt };
+      this.browserSessions.set(session.unikey, { userId, session, qr, timer });
+      return qr;
     } catch (error) {
-      await closeQrSession(session);
+      await this.qrPool.release(session);
       throw error;
     }
   }
@@ -265,10 +200,22 @@ export class NeteaseAccountService {
     if (!entry) return;
     this.browserSessions.delete(key);
     clearTimeout(entry.timer);
-    await closeQrSession(entry.session);
+    await this.qrPool.release(entry.session);
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await Promise.all([...this.browserSessions.keys()].map((key) => this.removeBrowserQr(key)));
   }
 
   async disconnect(userId: string): Promise<{ ok: true }> {
+    // Stop new polls before awaiting any in-flight validation.
+    const closing = [...this.browserSessions.entries()]
+      .filter(([, entry]) => entry.userId === userId)
+      .map(([key]) => this.removeBrowserQr(key));
+    // Expiry can remove a QR context while its account validation is still running.
+    await Promise.all([...closing, ...[...this.browserCompletions.values()]
+      .filter((entry) => entry.userId === userId)
+      .map((entry) => entry.completion.catch(() => undefined))]);
     await this.credentials.delete({ userId, platform: 'netease' });
     return { ok: true };
   }
@@ -384,22 +331,6 @@ export class NeteaseAccountService {
     };
   }
 
-  private async fetchProfile(cookie: string): Promise<{ nickname: string | null }> {
-    try {
-      const response = await neteaseApi.login_status({ cookie });
-      const body = (response.body ?? {}) as {
-        data?: { profile?: { nickname?: string } };
-        profile?: { nickname?: string };
-      };
-      const nickname =
-        body.data?.profile?.nickname ?? body.profile?.nickname ?? null;
-      return { nickname };
-    } catch {
-      return { nickname: null };
-    }
-  }
-
-  /** Same call as fetchProfile, but tells the user when the cookie is dead. */
   private async requireProfile(
     cookie: string,
   ): Promise<{ nickname: string | null }> {
@@ -458,12 +389,5 @@ export class NeteaseAccountService {
       cookie: typeof parsed.cookie === 'string' ? parsed.cookie : '',
       nickname: typeof parsed.nickname === 'string' ? parsed.nickname : null,
     };
-  }
-
-  private cleanupPending(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.pending) {
-      if (entry.expiresAt < now) this.pending.delete(key);
-    }
   }
 }

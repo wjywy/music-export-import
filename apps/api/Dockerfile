@@ -1,5 +1,7 @@
 FROM node:22-alpine
 
+RUN apk add --no-cache chromium
+
 ARG NPM_REGISTRY=https://registry.npmjs.org
 RUN npm config set registry "$NPM_REGISTRY" && npm install -g pnpm@10.34.5
 WORKDIR /repo

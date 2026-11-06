@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NeteaseAccountService } from '../../src/accounts/netease-account.service';
+import { NeteaseQrPool } from '../../src/accounts/netease-qr-pool';
 
 // The service calls the CommonJS client lazily, so the tests can swap the
 // single function they care about without touching the network.
@@ -44,6 +45,7 @@ function buildService(): {
   const service = new NeteaseAccountService(
     credentials as never,
     new FakeCipher() as never,
+    new NeteaseQrPool(),
   );
   return { service, credentials };
 }

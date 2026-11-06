@@ -9,6 +9,7 @@ import { AccountsController, PushController } from './accounts.controller';
 import { AccountsService } from './accounts.service';
 import { NeteaseAccountService } from './netease-account.service';
 import { QqAccountService } from './qq-account.service';
+import { NeteaseQrPool } from './netease-qr-pool';
 
 @Module({
   imports: [
@@ -18,7 +19,13 @@ import { QqAccountService } from './qq-account.service';
     AuthModule,
   ],
   controllers: [AccountsController, PushController],
-  providers: [AccountsService, NeteaseAccountService, QqAccountService, CredentialCipher],
+  providers: [
+    AccountsService,
+    NeteaseAccountService,
+    QqAccountService,
+    CredentialCipher,
+    { provide: NeteaseQrPool, useFactory: () => new NeteaseQrPool() },
+  ],
   exports: [NeteaseAccountService],
 })
 export class AccountsModule {}

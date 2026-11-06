@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { AllExceptionsFilter } from '../../src/common/all-exceptions.filter';
+import { NeteaseQrPool } from '../../src/accounts/netease-qr-pool';
 
 let app: INestApplication;
 let http: ReturnType<INestApplication['getHttpServer']>;
@@ -18,7 +19,10 @@ function auth(value: string) {
 }
 
 before(async () => {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(NeteaseQrPool)
+    .useValue({ prepare() {} })
+    .compile();
   app = moduleRef.createNestApplication();
   app.setGlobalPrefix('api');
   app.useGlobalPipes(

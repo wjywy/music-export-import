@@ -19,6 +19,7 @@ services:
     networks: [dukou]
 
   api:
+    init: true
     image: dukou-api:latest
     build:
       context: .
@@ -33,6 +34,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME:-dukou}
       PORT: 3000
+      CHROME_PATH: ${CHROME_PATH:-/usr/bin/chromium-browser}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       CREDENTIALS_SECRET: ${CREDENTIALS_SECRET:?set CREDENTIALS_SECRET}
       JWT_EXPIRES_IN: 7d

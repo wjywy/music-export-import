@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
-import { Logger } from '@nestjs/common';
+import { BadGatewayException, Logger } from '@nestjs/common';
 import { chromium } from 'playwright-core';
 import type { Browser, BrowserContext, Page, Request } from 'playwright-core';
 
-export type BrowserQrStatus = 'waiting' | 'scanned' | 'authorized';
+export type BrowserQrStatus = 'waiting' | 'scanned' | 'authorized' | 'expired';
 
 export interface BrowserQrSession {
   context: BrowserContext;
@@ -12,12 +12,15 @@ export interface BrowserQrSession {
   chainId: string;
   status: BrowserQrStatus;
   cookie: string | null;
+  expiresAt: number;
+  message?: string;
 }
 
 const logger = new Logger('NeteaseQrBrowser');
 const LOGIN_URL = 'https://music.163.com/#/login';
 const KEY_PATH = '/weapi/login/qrcode/unikey';
 const POLL_PATH = '/weapi/login/qrcode/client/login';
+const QR_LIFETIME_MS = 120_000;
 
 const LAUNCH_ARGS = [
   '--no-sandbox',
@@ -36,6 +39,7 @@ function executablePath(): string | undefined {
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
     '/opt/google/chrome/chrome',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   ]) {
     if (existsSync(candidate)) return candidate;
   }
@@ -44,7 +48,7 @@ function executablePath(): string | undefined {
 
 export async function qrBrowser(): Promise<Browser | null> {
   if (!browserPromise) {
-    browserPromise = (async () => {
+    const launching = (async () => {
       try {
         const browser = await chromium.launch({
           executablePath: executablePath(),
@@ -53,7 +57,7 @@ export async function qrBrowser(): Promise<Browser | null> {
           args: LAUNCH_ARGS,
         });
         browser.on('disconnected', () => {
-          browserPromise = null;
+          if (browserPromise === launching) browserPromise = null;
         });
         return browser;
       } catch (error) {
@@ -62,8 +66,16 @@ export async function qrBrowser(): Promise<Browser | null> {
         return null;
       }
     })();
+    browserPromise = launching;
   }
   return browserPromise;
+}
+
+export async function closeQrBrowser(): Promise<void> {
+  const pending = browserPromise;
+  browserPromise = null;
+  const browser = await pending;
+  await browser?.close().catch(() => undefined);
 }
 
 function cookieHeader(cookies: { name: string; value: string }[]): string {
@@ -76,11 +88,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Opens music.163.com, asks the official page for a QR key, and leaves the page
  * running so its own polling keeps the login session alive.
  */
-export async function openQrSession(): Promise<BrowserQrSession | null> {
+export async function openQrSession(): Promise<BrowserQrSession> {
   const startedAt = Date.now();
   const sessionDeadline = startedAt + 38_000;
   const browser = await qrBrowser();
-  if (!browser) return null;
+  if (!browser) {
+    throw new BadGatewayException('扫码浏览器启动失败，请检查 Chromium 安装及 CHROME_PATH 配置。');
+  }
 
   let context: BrowserContext | undefined;
   let stage = '创建浏览器页面';
@@ -91,12 +105,16 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
   const pendingScripts = new Map<Request, string>();
   const failedScripts = new Set<string>();
   const remaining = () => Math.max(1, sessionDeadline - Date.now());
+  let timeout: NodeJS.Timeout | undefined;
 
   try {
     context = await browser.newContext({
       locale: 'zh-CN',
       viewport: { width: 1280, height: 900 },
     });
+    // Closing the context also interrupts a stalled newPage or response body read.
+    timeout = setTimeout(() => void context?.close().catch(() => undefined), remaining());
+    timeout.unref();
     const page = await context.newPage();
     page.setDefaultTimeout(remaining());
     await page.route('**/*', (route) => {
@@ -110,7 +128,26 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       chainId: '',
       status: 'waiting',
       cookie: null,
+      expiresAt: Date.now() + QR_LIFETIME_MS,
     };
+    const readAuthorization = async () => {
+      if (!['waiting', 'scanned'].includes(session.status)) return;
+      const cookies = await session.context.cookies('https://music.163.com').catch(() => []);
+      const authenticated = cookies.some((cookie) => cookie.name === 'MUSIC_U' && cookie.value);
+      if (session.status === 'expired' || !authenticated) return;
+      session.cookie = cookieHeader(cookies);
+      session.status = 'authorized';
+    };
+    // The official page can navigate immediately after confirmation, invalidating the response body.
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) void readAuthorization();
+    });
+    context.on('close', () => {
+      if (session.status !== 'authorized') {
+        session.status = 'expired';
+        session.message = '扫码会话已关闭，请重新生成二维码。';
+      }
+    });
 
     page.on('requestfailed', (request) => {
       const failure = request.failure()?.errorText ?? '请求失败';
@@ -126,7 +163,10 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       if (path === KEY_PATH && !session.unikey) keyResult = failure;
       if (path === POLL_PATH) pollResult = failure;
     });
-    page.on('requestfinished', (request) => pendingScripts.delete(request));
+    page.on('requestfinished', (request) => {
+      pendingScripts.delete(request);
+      if (new URL(request.url()).pathname === POLL_PATH) void readAuthorization();
+    });
 
     page.on('request', (request) => {
       const { hostname, pathname } = new URL(request.url());
@@ -159,6 +199,7 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
             const key = body?.data?.unikey ?? body?.unikey;
             if (response.ok() && typeof key === 'string' && key && !session.unikey) {
               session.unikey = key;
+              session.expiresAt = Date.now() + QR_LIFETIME_MS;
             }
             keyResult = `HTTP ${status}${code}，${key ? '已返回二维码标识' : '缺少二维码标识'}`;
           })
@@ -167,18 +208,19 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       }
       if (pathname !== POLL_PATH) return;
       pollResult = `HTTP ${status}，${session.chainId ? '已有链路标识' : '缺少链路标识'}`;
+      void readAuthorization();
       response
         .json()
         .then(async (body: { code?: number }) => {
+          if (session.status === 'authorized' || session.status === 'expired') return;
           if (body?.code === 802 && session.status === 'waiting') {
             session.status = 'scanned';
           }
           if (body?.code === 803) {
-            const cookies = await session.context
-              .cookies('https://music.163.com')
-              .catch(() => []);
-            session.cookie = cookieHeader(cookies) || null;
-            session.status = 'authorized';
+            await readAuthorization();
+          } else if (![801, 802].includes(Number(body?.code))) {
+            session.status = 'expired';
+            session.message = '网易云二维码已失效，请重新生成。';
           }
         })
         .catch(() => undefined);
@@ -196,6 +238,7 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
     stage = '等待官网二维码';
     // The page may need extra time to initialize before it can send its first request.
     while (!(session.unikey && session.chainId)) {
+      if (session.status === 'expired') break;
       const deadline = keyRequestedAt !== undefined && !session.unikey
         ? Math.min(sessionDeadline, keyRequestedAt + 12_000)
         : sessionDeadline;
@@ -203,21 +246,30 @@ export async function openQrSession(): Promise<BrowserQrSession | null> {
       await sleep(200);
     }
 
-    if (!session.unikey || !session.chainId) {
+    if (!session.unikey || !session.chainId || session.status === 'expired') {
       const scriptFailures = [...failedScripts].slice(0, 5).join(', ') || '无';
       const scriptsWaiting = [...new Set(pendingScripts.values())].slice(0, 5).join(', ') || '无';
       logger.warn(
         `官网二维码未就绪，耗时 ${Date.now() - startedAt}ms。取码：${keyResult}。轮询：${pollResult}。脚本失败：${scriptFailures}。脚本待完成：${scriptsWaiting}`,
       );
-      await closeQrSession(session);
-      return null;
+      if (!session.unikey) {
+        throw new BadGatewayException(keyRequestedAt === undefined
+          ? '网易云登录组件加载超时，请稍后重试。'
+          : '网易云取码接口未能返回二维码，请稍后重试。');
+      }
+      throw new BadGatewayException('网易云授权轮询尚未就绪，请重新生成二维码。');
     }
     return session;
   } catch (error) {
+    await context?.close().catch(() => undefined);
+    if (error instanceof BadGatewayException) throw error;
     const reason = navigationFailure ?? (error instanceof Error ? error.name : 'unknown');
     logger.warn(`${stage}失败，耗时 ${Date.now() - startedAt}ms (${reason})`);
-    await context?.close().catch(() => undefined);
-    return null;
+    throw new BadGatewayException(stage === '等待网易云登录页响应'
+      ? '网易云登录页加载失败，请稍后重试。'
+      : '扫码浏览器连接中断，请重新生成二维码。');
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
