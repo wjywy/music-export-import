@@ -64,6 +64,20 @@ test('browser sessions are bounded and capacity returns after release', async ()
   assert.equal(closed.length, 3);
 });
 
+test('a just-prepared context is counted once when two users acquire in the same turn', async () => {
+  const { pool, opened } = poolFixture();
+  try {
+    pool.prepare();
+    await Promise.resolve();
+    const [first, second] = await Promise.all([pool.acquire(), pool.acquire()]);
+    assert.equal(opened.length, 2);
+    assert.notEqual(first.unikey, second.unikey);
+    await assert.rejects(() => pool.acquire(), /繁忙/);
+  } finally {
+    await pool.onModuleDestroy();
+  }
+});
+
 test('a failed background initialization does not poison an explicit retry', async () => {
   let calls = 0;
   const pool = new NeteaseQrPool(

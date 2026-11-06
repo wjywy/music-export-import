@@ -52,7 +52,9 @@ WEB_PORT=8090
 WEB_BIND=127.0.0.1
 NPM_REGISTRY=https://registry.npmmirror.com
 
-# 网易云官方扫码及歌单写入：在网易云开放平台申请应用后填写
+# 多人扫码默认走官网浏览器，不需要申请 AppID
+NETEASE_QR_PROVIDER=browser
+# 个人 CLI 授权可选；需显式改为 openapi，并确认应用授权范围
 NETEASE_OPENAPI_APP_ID=
 NETEASE_OPENAPI_APP_KEY=
 # 单行 PKCS#8 Base64 私钥，或用 \n 分隔的 RSA PEM
@@ -68,7 +70,9 @@ APPLE_MUSIC_PRIVATE_KEY=
 # 也可以改为手工 JWT：APPLE_MUSIC_TOKEN=
 ```
 
-`NETEASE_OPENAPI_*` 只配置在服务器端；配置后新生成的网易云二维码走官方接口，有效期为 5 分钟。已有 Cookie 登录可以继续使用，断开后重新扫码会切换到官方授权。未配置开放平台时继续使用官网浏览器扫码。真实应用凭证和用户授权令牌不要提交到仓库。
+多人使用的部署应保持 `NETEASE_QR_PROVIDER=browser`。用户在网易云 App 中扫描官网二维码并确认，渡口自动保存该用户的加密会话，无需手工复制 Cookie。二维码从生成起最多保留 2 分钟；官网可能提前使其失效。镜像已安装 Chromium，`CHROME_PATH` 可保持默认值。配置了 `NETEASE_OPENAPI_*` 也不会改变新二维码的来源。
+
+个人 CLI 模式需显式设置 `NETEASE_QR_PROVIDER=openapi`，二维码最多保留 5 分钟。个人应用的账号及接口授权范围有限，不能假定创建者申请一次 AppID 就允许任意用户扫码接入。`NETEASE_OPENAPI_*` 只在服务器配置。切换二维码模式不删除已有账号凭据，后续读写继续使用该账号原先保存的会话；断开后重新扫码才会使用新模式。真实应用凭证和用户授权令牌不要提交到仓库。
 
 Apple Music 的 `APPLE_MUSIC_*` 变量会传给 API 容器；`APPLE_MUSIC_PRIVATE_KEY` 里的 `$` 等字符不要做 shell 展开。配置后用 `GET /api/platforms/apple/config` 确认 `configured: true`。
 
@@ -197,7 +201,7 @@ bash scripts/deploy-prod.sh
 
 这次的实时进度需要同时更新 API 和 web。API 通过已认证的 POST 请求返回 `text/event-stream`；浏览器请求 JSON 时保留原来的返回格式。容器 nginx 会转发 `X-Accel-Buffering: no`，当前 Caddy 可直接转发进度。若使用其他 nginx 反代，按上面的配置关闭响应缓冲。
 
-网易云官方扫码需要服务器 `.env.production` 中已有 `NETEASE_OPENAPI_APP_ID`、`NETEASE_OPENAPI_APP_KEY` 和 `NETEASE_OPENAPI_PRIVATE_KEY`。本地授权保存在本地数据库，服务器部署后需在服务器页面扫码连接一次。不要用本地 `.env` 覆盖服务器的数据库密码或加密密钥。
+多人官网扫码只需 `NETEASE_QR_PROVIDER=browser` 和可运行的 Chromium。只有显式选择个人 CLI 模式才需要服务器 `.env.production` 中的 `NETEASE_OPENAPI_*`。本地授权保存在本地数据库，服务器部署后需在服务器页面扫码连接一次。不要用本地 `.env` 覆盖服务器的数据库密码或加密密钥。
 
 ## 六、备份
 

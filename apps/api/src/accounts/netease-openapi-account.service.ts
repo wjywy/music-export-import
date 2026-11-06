@@ -60,6 +60,7 @@ export class NeteaseOpenApiAccountService {
   ) {}
 
   get enabled(): boolean { return this.client.enabled; }
+  get qrEnabled(): boolean { return this.client.qrProvider === 'openapi'; }
 
   async ownsSession(userId: string): Promise<boolean> {
     return Boolean(await this.readSession(userId, false));

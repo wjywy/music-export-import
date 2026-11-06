@@ -74,11 +74,17 @@ const QR_LIFETIME_MS = 300_000;
 @Injectable()
 export class NeteaseOpenApiClient {
   readonly appId: string;
+  readonly qrProvider: 'browser' | 'openapi';
   private readonly appKey: string;
   private readonly privateKey: string;
   private signingKey?: KeyObject;
 
   constructor(config: ConfigService) {
+    const qrProvider = config.get<string>('NETEASE_QR_PROVIDER', 'browser').trim() || 'browser';
+    if (qrProvider !== 'browser' && qrProvider !== 'openapi') {
+      throw new Error('NETEASE_QR_PROVIDER 必须为 browser 或 openapi。');
+    }
+    this.qrProvider = qrProvider;
     this.appId = config.get<string>('NETEASE_OPENAPI_APP_ID', '').trim();
     this.appKey = config.get<string>('NETEASE_OPENAPI_APP_KEY', '').trim();
     this.privateKey = config.get<string>('NETEASE_OPENAPI_PRIVATE_KEY', '').trim();

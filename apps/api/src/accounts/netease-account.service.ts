@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -59,6 +60,8 @@ const TRACK_BATCH = 500;
 @Injectable()
 export class NeteaseAccountService {
   private readonly browserStarts = new Map<string, Promise<AccountQr>>();
+  private readonly disconnecting = new Set<string>();
+  private readonly disconnects = new Map<string, Promise<{ ok: true }>>();
   private readonly browserCompletions = new Map<
     string,
     { userId: string; completion: Promise<AccountQrStatus> }
@@ -92,7 +95,13 @@ export class NeteaseAccountService {
   }
 
   async status(userId: string): Promise<AccountStatus> {
-    if (this.official?.enabled) return this.official.status(userId);
+    if (this.official?.enabled) {
+      const status = await this.official.status(userId);
+      if (!status.connected && !this.official.qrEnabled && !this.disconnecting.has(userId)) {
+        this.qrPool.prepare();
+      }
+      return status;
+    }
     const row = await this.credentials.findOne({
       where: { userId, platform: 'netease' },
     });
@@ -124,7 +133,8 @@ export class NeteaseAccountService {
   }
 
   async startQr(userId: string): Promise<AccountQr> {
-    if (this.official?.enabled) return this.official.startQr(userId);
+    this.assertConnectedOperationsAllowed(userId);
+    if (this.official?.qrEnabled) return this.official.startQr(userId);
     const existing = this.browserStarts.get(userId);
     if (existing) return existing;
     const start = this.startBrowserQr(userId).finally(() => this.browserStarts.delete(userId));
@@ -133,7 +143,8 @@ export class NeteaseAccountService {
   }
 
   async checkQr(userId: string, key: string): Promise<AccountQrStatus> {
-    if (this.official?.enabled) return this.official.checkQr(userId, key);
+    if (this.disconnecting.has(userId)) return { status: 'expired' };
+    if (this.official?.qrEnabled) return this.official.checkQr(userId, key);
     const browser = this.browserSessions.get(key);
     if (browser?.userId === userId) {
       const { session } = browser;
@@ -169,6 +180,7 @@ export class NeteaseAccountService {
     cookie: string,
   ): Promise<AccountQrStatus> {
     const profile = await this.requireProfile(cookie);
+    if (this.disconnecting.has(userId)) return { status: 'expired' };
     await this.saveSession(userId, { cookie, nickname: profile.nickname });
     await this.removeBrowserQr(key);
     return { status: 'authorized', nickname: profile.nickname };
@@ -185,8 +197,10 @@ export class NeteaseAccountService {
     const session = await this.qrPool.acquire();
 
     try {
+      this.assertConnectedOperationsAllowed(userId);
       const url = scanLoginUrl(session.unikey, session.chainId);
       const image = await QRCode.toDataURL(url, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
+      this.assertConnectedOperationsAllowed(userId);
       const expiresAt = new Date(session.expiresAt);
       const qr: AccountQr = { platform: 'netease', key: session.unikey, image, url, expiresAt };
       const timer = setTimeout(
@@ -214,18 +228,35 @@ export class NeteaseAccountService {
     await Promise.all([...this.browserSessions.keys()].map((key) => this.removeBrowserQr(key)));
   }
 
-  async disconnect(userId: string): Promise<{ ok: true }> {
-    if (this.official?.enabled) return this.official.disconnect(userId);
-    // Stop new polls before awaiting any in-flight validation.
-    const closing = [...this.browserSessions.entries()]
-      .filter(([, entry]) => entry.userId === userId)
-      .map(([key]) => this.removeBrowserQr(key));
-    // Expiry can remove a QR context while its account validation is still running.
-    await Promise.all([...closing, ...[...this.browserCompletions.values()]
-      .filter((entry) => entry.userId === userId)
-      .map((entry) => entry.completion.catch(() => undefined))]);
-    await this.credentials.delete({ userId, platform: 'netease' });
-    return { ok: true };
+  disconnect(userId: string): Promise<{ ok: true }> {
+    const existing = this.disconnects.get(userId);
+    if (existing) return existing;
+    this.disconnecting.add(userId);
+    const disconnect = (async (): Promise<{ ok: true }> => {
+      await this.browserStarts.get(userId)?.catch(() => undefined);
+      const closing = [...this.browserSessions.entries()]
+        .filter(([, entry]) => entry.userId === userId)
+        .map(([key]) => this.removeBrowserQr(key));
+      // Expiry may remove the QR context before account validation has finished.
+      await Promise.all([...closing, ...[...this.browserCompletions.values()]
+        .filter((entry) => entry.userId === userId)
+        .map((entry) => entry.completion.catch(() => undefined))]);
+      // The saved credential may predate a change of QR provider.
+      if (this.official) return this.official.disconnect(userId);
+      await this.credentials.delete({ userId, platform: 'netease' });
+      return { ok: true };
+    })().finally(() => {
+      this.disconnecting.delete(userId);
+      this.disconnects.delete(userId);
+    });
+    this.disconnects.set(userId, disconnect);
+    return disconnect;
+  }
+
+  private assertConnectedOperationsAllowed(userId: string): void {
+    if (this.disconnecting.has(userId)) {
+      throw new ServiceUnavailableException('网易云账号正在断开，请稍后重试。');
+    }
   }
 
   /**

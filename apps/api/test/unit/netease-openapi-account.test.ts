@@ -11,7 +11,7 @@ import type { PlaylistDetail } from '../../src/playlists/playlists.service';
 
 const privateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey
   .export({ format: 'der', type: 'pkcs8' }).toString('base64');
-const config = new ConfigService({ NETEASE_OPENAPI_APP_ID: 'unit-app',
+const config = new ConfigService({ NETEASE_QR_PROVIDER: 'openapi', NETEASE_OPENAPI_APP_ID: 'unit-app',
   NETEASE_OPENAPI_PRIVATE_KEY: privateKey, NETEASE_OPENAPI_APP_KEY: 'unit-key', CREDENTIALS_SECRET: 'unit-cipher' });
 const playlistId = 'b'.repeat(32), songId = 'a'.repeat(32);
 const ref = { platform: 'netease' as const, kind: 'playlist' as const, id: '101', url: 'https://music.163.com/playlist?id=101' };

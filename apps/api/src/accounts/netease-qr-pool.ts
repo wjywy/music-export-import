@@ -31,6 +31,8 @@ export class NeteaseQrPool {
     if (this.closed || this.prepared || this.sessions.size + this.opening >= MAX_SESSIONS) return;
     this.opening += 1;
     const pending = this.open().then(async (session) => {
+      // Transfer the slot from opening to active in one turn, without counting it twice.
+      this.opening -= 1;
       if (this.closed) {
         await this.dispose(session);
         throw new ServiceUnavailableException('扫码服务正在重启，请稍后重试。');
@@ -46,7 +48,10 @@ export class NeteaseQrPool {
         this.idleTimer.unref();
       }
       return session;
-    }).finally(() => { this.opening -= 1; });
+    }, (error: unknown) => {
+      this.opening -= 1;
+      throw error;
+    });
     this.prepared = pending;
     // Preparation runs in the background. A subsequent click may explicitly retry.
     void pending.catch(() => {
