@@ -43,7 +43,7 @@ function fixture(t: TestContext, provider?: string) {
   const api = require('NeteaseCloudMusicApi');
   const profile = t.mock.method(api, 'login_status', async ({ cookie }: { cookie: string }) =>
     ({ body: { code: 200, profile: { nickname: cookie } } }));
-  return { service, official, pool, opened, closed, rows, cipher, profile, fetch, session,
+  return { service, official, pool, opened, closed, rows, cipher, profile, fetch, session, repository,
     opening(value: typeof opening) { opening = value; } };
 }
 
@@ -88,6 +88,16 @@ test('personal OpenAPI QR remains available only when explicitly selected', asyn
   assert.equal(f.opened.length, 0);
 });
 
+test('a cookie written after the last website response is detected by the next status check', async (t) => {
+  const f = fixture(t);
+  const qr = await f.service.startQr('bob');
+  f.opened[0].context = { cookies: async () => [{ name: 'MUSIC_U', value: 'bob' }] } as never;
+  const result = await f.service.checkQr('bob', qr.key);
+  assert.equal(result.status, 'authorized');
+  assert.equal(await f.service.cookieFor('bob'), 'MUSIC_U=bob');
+  assert.equal(f.profile.mock.callCount(), 0, 'website authorization must not wait on a second Node profile request');
+});
+
 test('website writes use the scanning user cookie even while a personal AppID is configured', async (t) => {
   const f = fixture(t);
   const qr = await f.service.startQr('bob');
@@ -129,7 +139,8 @@ test('unknown QR providers fail during configuration instead of silently selecti
 test('disconnect drains a website authorization even while personal OpenAPI is configured', async (t) => {
   const f = fixture(t);
   const pending = deferred<unknown>(), started = deferred<void>();
-  f.profile.mock.mockImplementation(async () => { started.resolve(); return pending.promise as never; });
+  const save = f.repository.save;
+  t.mock.method(f.repository, 'save', async (value: PlatformCredential) => { started.resolve(); await pending.promise; return save(value); });
   const qr = await f.service.startQr('alice');
   f.opened[0].cookie = 'MUSIC_U=alice'; f.opened[0].status = 'authorized';
   const checking = f.service.checkQr('alice', qr.key); await started.promise;

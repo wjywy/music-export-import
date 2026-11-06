@@ -16,7 +16,7 @@ function session(key: string): BrowserQrSession {
   };
 }
 
-function poolFixture() {
+function poolFixture(dispose?: () => Promise<void>) {
   const opened: BrowserQrSession[] = [];
   const closed: BrowserQrSession[] = [];
   const pool = new NeteaseQrPool(
@@ -25,7 +25,7 @@ function poolFixture() {
       opened.push(next);
       return next;
     },
-    async (value) => { closed.push(value); },
+    async (value) => { closed.push(value); await dispose?.(); },
     async () => undefined,
   );
   return { pool, opened, closed };
@@ -62,6 +62,20 @@ test('browser sessions are bounded and capacity returns after release', async ()
     await pool.onModuleDestroy();
   }
   assert.equal(closed.length, 3);
+});
+
+test('a prepared QR remains available after thirty seconds if it is still fresh', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const { pool, opened } = poolFixture();
+  try {
+    pool.prepare();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(35_000);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const qr = await pool.acquire();
+    assert.equal(qr, opened[0]);
+    assert.equal(opened.length, 1, 'a still-fresh prepared QR must not trigger another page load');
+  } finally { await pool.onModuleDestroy(); }
 });
 
 test('a just-prepared context is counted once when two users acquire in the same turn', async () => {
@@ -144,8 +158,8 @@ test('shutdown also closes a browser that finishes opening after shutdown', asyn
   assert.deepEqual(closed, [late]);
 });
 
-function serviceFixture() {
-  const fixture = poolFixture();
+function serviceFixture(dispose?: () => Promise<void>) {
+  const fixture = poolFixture(dispose);
   let row: Record<string, unknown> | null = null;
   const credentials = {
     findOne: async () => row,
@@ -157,7 +171,7 @@ function serviceFixture() {
     encrypt: (value: string) => `encrypted:${value}`,
     decrypt: (value: string) => value.slice('encrypted:'.length),
   } as never, fixture.pool);
-  return { ...fixture, service, saved: () => row };
+  return { ...fixture, service, credentials, saved: () => row };
 }
 
 test('missing CHROME_PATH still uses official browser sessions and reuses an owned pending code', async () => {
@@ -198,91 +212,78 @@ test('upstream expiry releases the browser and permits a fresh code', async () =
   }
 });
 
-test('failed validation can be retried and concurrent polls complete authorization only once', async () => {
-  const { service, pool, opened, closed, saved } = serviceFixture();
-  // The QR provider owns acquisition. Account validation is isolated from the network here.
-  const api = require('NeteaseCloudMusicApi') as { login_status: (...args: unknown[]) => Promise<unknown> };
-  const original = api.login_status;
+test('failed persistence can be retried and concurrent polls save authorization only once', async () => {
+  const { service, pool, opened, closed, saved, credentials } = serviceFixture();
+  const originalSave = credentials.save;
   let attempts = 0;
-  api.login_status = async () => {
+  credentials.save = async (value) => {
     attempts += 1;
-    if (attempts === 1) throw new Error('temporary upstream failure');
-    return { body: { code: 200, profile: { nickname: 'fixture' } } };
+    if (attempts === 1) throw new Error('temporary storage failure');
+    await originalSave(value);
   };
   try {
     const qr = await service.startQr('owner');
-    opened[0].status = 'authorized';
-    opened[0].cookie = 'MUSIC_U=fixture';
-    await assert.rejects(() => service.checkQr('owner', qr.key), /连接网易云失败/);
+    opened[0].status = 'authorized'; opened[0].cookie = 'MUSIC_U=fixture';
+    await assert.rejects(() => service.checkQr('owner', qr.key), /temporary storage failure/);
     assert.equal(closed.length, 0);
     assert.equal(saved(), null);
-    const results = await Promise.all([
-      service.checkQr('owner', qr.key),
-      service.checkQr('owner', qr.key),
-    ]);
+    const results = await Promise.all([service.checkQr('owner', qr.key), service.checkQr('owner', qr.key)]);
     assert.deepEqual(results.map((result) => result.status), ['authorized', 'authorized']);
     assert.equal(attempts, 2);
     assert.equal(saved()?.userId, 'owner');
     assert.equal(closed.length, 1);
-  } finally {
-    api.login_status = original;
-    await service.onModuleDestroy();
-    await pool.onModuleDestroy();
-  }
+  } finally { await service.onModuleDestroy(); await pool.onModuleDestroy(); }
 });
 
-test('disconnect waits for authorization even after expiry has removed the QR session', async () => {
-  const { service, pool, opened, saved } = serviceFixture();
-  const api = require('NeteaseCloudMusicApi') as { login_status: (...args: unknown[]) => Promise<unknown> };
-  const original = api.login_status;
-  let finish!: (value: unknown) => void;
-  api.login_status = () => new Promise((resolve) => { finish = resolve; });
+test('disconnect drains persistence even after expiry removes the QR context', async () => {
+  const { service, pool, opened, saved, credentials } = serviceFixture();
+  const originalSave = credentials.save;
+  let finish!: () => void, started!: () => void;
+  const pending = new Promise<void>((done) => { finish = done; });
+  const saving = new Promise<void>((done) => { started = done; });
+  credentials.save = async (value) => { started(); await pending; await originalSave(value); };
   try {
     const qr = await service.startQr('owner');
-    opened[0].status = 'authorized';
-    opened[0].cookie = 'MUSIC_U=fixture';
+    opened[0].status = 'authorized'; opened[0].cookie = 'MUSIC_U=fixture';
     const authorization = service.checkQr('owner', qr.key);
+    await saving;
     opened[0].expiresAt = Date.now() - 1;
     assert.equal((await service.checkQr('owner', qr.key)).status, 'expired');
-
     let disconnected = false;
     const disconnect = service.disconnect('owner').then(() => { disconnected = true; });
     await new Promise<void>((resolve) => setImmediate(resolve));
-    const finishedBeforeValidation = disconnected;
-    finish({ body: { code: 200, profile: { nickname: 'fixture' } } });
+    assert.equal(disconnected, false);
+    finish();
     await Promise.all([authorization, disconnect]);
-
-    assert.equal(saved(), null, 'a late authorization must not reconnect a disconnected account');
-    assert.equal(finishedBeforeValidation, false);
-  } finally {
-    api.login_status = original;
-    await service.onModuleDestroy();
-    await pool.onModuleDestroy();
-  }
+    assert.equal(saved(), null);
+  } finally { finish(); await service.onModuleDestroy(); await pool.onModuleDestroy(); }
 });
 
 test('disconnect prevents a late poll from starting authorization', async () => {
   const { service, pool, opened, saved } = serviceFixture();
-  const api = require('NeteaseCloudMusicApi') as { login_status: (...args: unknown[]) => Promise<unknown> };
-  const original = api.login_status;
-  let finish: ((value: unknown) => void) | undefined;
-  api.login_status = () => new Promise((resolve) => { finish = resolve; });
   try {
     const qr = await service.startQr('owner');
-    opened[0].status = 'authorized';
-    opened[0].cookie = 'MUSIC_U=fixture';
-
+    opened[0].status = 'authorized'; opened[0].cookie = 'MUSIC_U=fixture';
     const disconnect = service.disconnect('owner');
-    await Promise.resolve();
-    const authorization = service.checkQr('owner', qr.key);
-    finish?.({ body: { code: 200, profile: { nickname: 'fixture' } } });
-    const [result] = await Promise.all([authorization, disconnect]);
-
-    assert.equal(result.status, 'expired');
+    assert.equal((await service.checkQr('owner', qr.key)).status, 'expired');
+    await disconnect;
     assert.equal(saved(), null);
-  } finally {
-    api.login_status = original;
-    await service.onModuleDestroy();
-    await pool.onModuleDestroy();
-  }
+  } finally { await service.onModuleDestroy(); await pool.onModuleDestroy(); }
+});
+
+test('confirmed login responds before a stalled browser close finishes', async () => {
+  let finish!: () => void;
+  const closing = new Promise<void>((done) => { finish = done; });
+  const { service, pool, opened, saved } = serviceFixture(() => closing);
+  try {
+    const qr = await service.startQr('owner');
+    opened[0].status = 'authorized'; opened[0].cookie = 'MUSIC_U=fixture';
+    let completed = false;
+    const checking = service.checkQr('owner', qr.key).then((result) => { completed = true; return result; });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(completed, true);
+    assert.equal(saved()?.userId, 'owner');
+    finish();
+    assert.equal((await checking).status, 'authorized');
+  } finally { finish(); await service.onModuleDestroy(); await pool.onModuleDestroy(); }
 });

@@ -12,6 +12,7 @@ export interface BrowserQrSession {
   chainId: string;
   status: BrowserQrStatus;
   cookie: string | null;
+  nickname?: string | null;
   expiresAt: number;
   message?: string;
 }
@@ -82,6 +83,17 @@ function cookieHeader(cookies: { name: string; value: string }[]): string {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
 }
 
+/** Also called by API polling, since the page may set its Cookie after its last network event. */
+export async function refreshQrSession(session: BrowserQrSession): Promise<void> {
+  if (!['waiting', 'scanned'].includes(session.status) || session.expiresAt <= Date.now()) return;
+  try {
+    const cookies = await session.context.cookies('https://music.163.com');
+    if (session.status === 'expired' || !cookies.some((cookie) => cookie.name === 'MUSIC_U' && cookie.value)) return;
+    session.cookie = cookieHeader(cookies);
+    session.status = 'authorized';
+  } catch { /* Context closure is handled by the browser's close event. */ }
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -130,14 +142,7 @@ export async function openQrSession(): Promise<BrowserQrSession> {
       cookie: null,
       expiresAt: Date.now() + QR_LIFETIME_MS,
     };
-    const readAuthorization = async () => {
-      if (!['waiting', 'scanned'].includes(session.status)) return;
-      const cookies = await session.context.cookies('https://music.163.com').catch(() => []);
-      const authenticated = cookies.some((cookie) => cookie.name === 'MUSIC_U' && cookie.value);
-      if (session.status === 'expired' || !authenticated) return;
-      session.cookie = cookieHeader(cookies);
-      session.status = 'authorized';
-    };
+    const readAuthorization = () => refreshQrSession(session);
     // The official page can navigate immediately after confirmation, invalidating the response body.
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) void readAuthorization();
@@ -211,7 +216,11 @@ export async function openQrSession(): Promise<BrowserQrSession> {
       void readAuthorization();
       response
         .json()
-        .then(async (body: { code?: number }) => {
+        .then(async (body: { code?: number; nickname?: string; profile?: { nickname?: string } }) => {
+          const nickname = body?.profile?.nickname ?? body?.nickname;
+          if (body?.code === 803 && typeof nickname === 'string') {
+            session.nickname = nickname;
+          }
           if (session.status === 'authorized' || session.status === 'expired') return;
           if (body?.code === 802 && session.status === 'waiting') {
             session.status = 'scanned';

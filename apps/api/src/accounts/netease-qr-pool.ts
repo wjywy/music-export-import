@@ -39,7 +39,7 @@ export class NeteaseQrPool {
       }
       this.sessions.add(session);
       if (this.prepared === pending) {
-        const idleMs = Math.max(0, Math.min(30_000, session.expiresAt - Date.now()));
+        const idleMs = Math.max(0, session.expiresAt - Date.now() - 15_000);
         this.idleTimer = setTimeout(() => {
           if (this.prepared !== pending) return;
           this.prepared = null;

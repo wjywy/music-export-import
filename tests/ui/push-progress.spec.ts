@@ -49,6 +49,35 @@ async function openMigration(page: Page, url: string, start = true, connected = 
   return dialog;
 }
 
+test('QR status retries a transient error and continues immediately after phone confirmation', async ({ page }) => {
+  const stream = await progressServer();
+  let checks = 0, connected = false;
+  try {
+    await page.route('**/api/accounts/netease/qr', (route) => route.fulfill({ json: {
+      platform: 'netease', key: 'retry-login', expiresAt: new Date(Date.now() + 60000).toISOString(),
+      image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+    } }));
+    await page.route('**/api/accounts/netease/qr/retry-login', (route) => {
+      checks += 1;
+      if (checks === 1) return route.fulfill({ status: 503, json: { message: 'temporary failure' } });
+      connected = true;
+      return route.fulfill({ json: { status: 'authorized' } });
+    });
+    const dialog = await openMigration(page, stream.url, false, () => connected);
+    await dialog.getByRole('button', { name: '扫码连接 网易云音乐' }).click();
+    await expect(dialog.getByText('检查登录状态暂时失败，正在重试…')).toBeVisible();
+    await stream.ready;
+    await expect(dialog.getByRole('img', { name: '网易云音乐 登录二维码' })).toHaveCount(0);
+    await expect(dialog.getByText('二维码已过期。', { exact: true })).toHaveCount(0);
+    expect(checks).toBe(2);
+    stream.progress('done', 1, 1, 100);
+    stream.event({ type: 'result', result: { platform: 'netease', name: 'test',
+      url: 'https://music.163.com/#/playlist?id=101', added: 2, failed: 0, skipped: 0 } });
+    stream.end();
+    await expect(dialog.getByText('迁移处理完成')).toBeVisible();
+  } finally { stream.close(); }
+});
+
 test('real streamed progress stays visible across closing, then completes after verification', async ({ page }) => {
   const stream = await progressServer();
   try {

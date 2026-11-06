@@ -167,7 +167,7 @@ export function TransferDialog({
   const accounts = useQuery({
     queryKey: ['accounts'],
     queryFn: api.accounts,
-    enabled: open && !isApple,
+    enabled: !isApple,
     staleTime: 15_000,
     retry: false,
   });
@@ -376,6 +376,7 @@ export function TransferDialog({
       try {
         const status = await api.checkAccountQr(target, qr.key);
         if (cancelled) return;
+        setAccountError(null);
         if (status.status === 'authorized') {
           setQr(null);
           setQrState('authorized');
@@ -389,17 +390,22 @@ export function TransferDialog({
           return;
         }
         setQrState(status.status);
-        timer = window.setTimeout(tick, 2000);
-      } catch (error) {
+        timer = window.setTimeout(tick, 1000);
+      } catch {
         if (cancelled) return;
-        setQrState('expired');
+        if (Date.now() >= new Date(qr.expiresAt).getTime()) {
+          setQrState('expired');
+          setAccountError('二维码已过期，请重新生成。');
+          return;
+        }
         setAccountError(
-          error instanceof Error ? error.message : '检查扫码状态失败。',
+          '检查登录状态暂时失败，正在重试…',
         );
+        timer = window.setTimeout(tick, 1000);
       }
     };
 
-    timer = window.setTimeout(tick, 1500);
+    void tick();
     return () => {
       cancelled = true;
       if (timer) window.clearTimeout(timer);

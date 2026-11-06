@@ -27,7 +27,7 @@ import {
   scanLoginUrl,
   uniqueNumericIds,
 } from './account.utils';
-import type { BrowserQrSession } from './netease-qr-browser';
+import { refreshQrSession, type BrowserQrSession } from './netease-qr-browser';
 import { NeteaseQrPool } from './netease-qr-pool';
 import { NeteaseOpenApiAccountService } from './netease-openapi-account.service';
 import type { ParsedRef, PlatformAdapter, RemotePlaylist } from '../platforms/adapter.interface';
@@ -148,6 +148,7 @@ export class NeteaseAccountService {
     const browser = this.browserSessions.get(key);
     if (browser?.userId === userId) {
       const { session } = browser;
+      await refreshQrSession(session);
       if (session.status === 'expired' || session.expiresAt <= Date.now()) {
         await this.removeBrowserQr(key);
         return { status: 'expired', message: session.message || '二维码已过期，请重新生成。' };
@@ -158,7 +159,7 @@ export class NeteaseAccountService {
         throw new BadGatewayException('网易云登录成功，但没有返回会话 Cookie。');
       }
       if (!browser.completion) {
-        const completion = this.completeBrowserQr(userId, key, session.cookie)
+        const completion = this.completeBrowserQr(userId, key, session.cookie, session.nickname ?? null)
           .finally(() => this.browserCompletions.delete(key));
         this.browserCompletions.set(key, { userId, completion });
         browser.completion = completion;
@@ -178,12 +179,15 @@ export class NeteaseAccountService {
     userId: string,
     key: string,
     cookie: string,
+    nickname: string | null,
   ): Promise<AccountQrStatus> {
-    const profile = await this.requireProfile(cookie);
     if (this.disconnecting.has(userId)) return { status: 'expired' };
-    await this.saveSession(userId, { cookie, nickname: profile.nickname });
-    await this.removeBrowserQr(key);
-    return { status: 'authorized', nickname: profile.nickname };
+    // This Cookie came from an isolated official browser context after QR confirmation.
+    // Manually pasted Cookies still go through requireProfile in connectWithCookie.
+    await this.saveSession(userId, { cookie, nickname });
+    if (this.disconnecting.has(userId)) return { status: 'expired' };
+    void this.removeBrowserQr(key).catch(() => undefined);
+    return { status: 'authorized', nickname };
   }
 
   private async startBrowserQr(userId: string): Promise<AccountQr> {

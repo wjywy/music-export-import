@@ -156,7 +156,7 @@ export const api = {
     }),
   checkAccountQr: (platform: AccountPlatform, key: string) =>
     request<AccountQrStatus>(`/accounts/${platform}/qr/${encodeURIComponent(key)}`, {
-      timeoutMs: 20_000,
+      timeoutMs: 5000,
     }),
   connectAccountCookie: (platform: AccountPlatform, cookie: string) =>
     request<AccountStatus>(`/accounts/${platform}/cookie`, {
