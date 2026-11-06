@@ -94,6 +94,7 @@ pnpm dev
 | `pnpm typecheck` | TypeScript 检查 |
 | `pnpm seed` | 写入演示账号与歌单 |
 | `pnpm test:unit` / `test:e2e` / `test:ui` | 分层测试 |
+| `pnpm test:docker-context` | 用占位文件验证 Docker 构建不包含环境凭证（需要 Docker） |
 
 ## 关键环境变量
 

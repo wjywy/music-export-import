@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @dukou/api test:unit && pnpm --filter @dukou/api test:e2e && pnpm test:ui",
     "test:unit": "pnpm --filter @dukou/api test:unit",
+    "test:docker-context": "bash scripts/check-docker-context.sh",
     "test:e2e": "pnpm --filter @dukou/api test:e2e",
     "test:ui": "playwright test"
   },

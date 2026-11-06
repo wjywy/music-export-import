@@ -15,6 +15,8 @@ apps/api/data
 *.sqlite3
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.example
 !.env.production.example
 *.log

@@ -20,14 +20,14 @@ test('demo account can log in and see seeded playlists', async ({ page }) => {
   await expect(page.getByRole('link', { name: /导入歌单/ })).toBeVisible();
 });
 
-test('import page is a single QQ / NetEase link form', async ({ page }) => {
+test('import page is a single QQ / NetEase / Apple Music link form', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: '登录' }).click();
   await page.waitForURL('**/app');
 
   await page.goto('/app/import');
   await expect(
-    page.getByPlaceholder('粘贴 QQ 音乐或网易云歌单链接'),
+    page.getByPlaceholder('粘贴 QQ 音乐、网易云或 Apple Music 歌单链接'),
   ).toBeVisible();
   await expect(page.getByText('批量合并')).toHaveCount(0);
   await expect(page.getByText('酷狗')).toHaveCount(0);

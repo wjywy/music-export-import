@@ -52,6 +52,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check Docker context excludes environment files
+        run: pnpm test:docker-context
+
       - name: Migrate test database
         run: pnpm --filter @dukou/api db:reset
 
