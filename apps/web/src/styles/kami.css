@@ -623,6 +623,51 @@ img {
   transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.push-progress {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.push-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.push-progress-value,
+.push-progress-count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--stone);
+}
+
+.push-progress-track {
+  height: 4px;
+  overflow: hidden;
+  background: var(--warm-sand);
+  border-radius: 2px;
+}
+
+.push-progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  transform-origin: left;
+  transition: transform 180ms ease;
+}
+
+.push-progress-count { margin-top: 8px; }
+.push-progress--failed .push-progress-track > span { background: var(--danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .push-progress-track > span { transition: none; }
+}
+
 /* ── landing ──────────────────────────────────────────────── */
 
 .landing-hero {

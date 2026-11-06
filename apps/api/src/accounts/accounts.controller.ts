@@ -4,10 +4,14 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { respondToPush } from '../common/push-progress';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -79,7 +83,9 @@ export class PushController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: PushPlaylistDto,
+    @Headers('accept') accept: string | undefined,
+    @Res() response: Response,
   ) {
-    return this.accounts.push(user.sub, id, dto.platform, dto.name);
+    return respondToPush(response, accept, (report) => this.accounts.push(user.sub, id, dto.platform, dto.name, report));
   }
 }

@@ -11,6 +11,8 @@ import { CredentialCipher } from '../platforms/credential-cipher.service';
 import type { PlaylistDetail } from '../playlists/playlists.service';
 import type { AccountPushResult, AccountQr, AccountQrStatus, AccountStatus } from './account.types';
 import { chunkArray, compactPlaylistName, neteaseIdFromUrl } from './account.utils';
+import { resolveNeteaseSongIds } from './netease-openapi-song-resolver';
+import type { ReportPushProgress } from '../common/push-progress';
 import {
   NETEASE_OPENAPI as API, NeteaseOpenApiClient, NeteaseOpenApiError,
   type OpenApiContext, type OpenApiEndpoint, type OpenApiRecord,
@@ -161,7 +163,7 @@ export class NeteaseOpenApiAccountService {
     await Promise.allSettled([...this.operations.values()].flatMap((set) => [...set]));
   }
 
-  push(userId: string, detail: PlaylistDetail, name?: string): Promise<AccountPushResult> {
+  push(userId: string, detail: PlaylistDetail, name?: string, report?: ReportPushProgress): Promise<AccountPushResult> {
     return this.run(userId, async () => {
       const call = await this.caller(userId);
       const wanted = new Map<string, { title: string; artist: string }>();
@@ -173,20 +175,12 @@ export class NeteaseOpenApiAccountService {
           artist: match?.remoteArtist || item.artist });
       }
       if (!wanted.size) throw new BadRequestException('还没有可写入的网易云曲目，请先匹配。');
-      const resolved = new Map<string, string>();
-      for (const [id, hint] of wanted) {
-        if (resolved.has(id)) continue;
-        const data = await call<OpenApiRecords>(API.searchSongs,
-          { keyword: `${hint.title} ${hint.artist}`.trim(), limit: 100, offset: 0 });
-        for (const record of data?.records ?? []) {
-          const original = positiveId(record.originalId);
-          if (original && wanted.has(original) && encryptedId(record.id) && record.visible !== false) {
-            resolved.set(original, record.id);
-          }
-        }
-      }
+      const resolved = await resolveNeteaseSongIds(wanted, (keyword) =>
+        call<OpenApiRecords>(API.searchSongs, { keyword, limit: 100, offset: 0 }),
+        (completed, total) => report?.('resolving', completed, total));
       if (!resolved.size) throw new BadGatewayException('网易云官方接口未返回已匹配歌曲，请重新匹配后重试。');
       const playlistName = compactPlaylistName(name ?? detail.title, 40);
+      report?.('creating', 0, 1);
       const created = await call<OpenApiRecord | string | number>(API.create, { playlistName });
       let playlist = typeof created === 'object' && created ? created : { id: String(created ?? '') };
       if (!encryptedId(playlist.id)) {
@@ -201,15 +195,47 @@ export class NeteaseOpenApiAccountService {
       }
       const originalId = positiveId(playlist?.originalId);
       if (!originalId || !encryptedId(playlist.id)) throw new BadGatewayException('网易云没有返回新歌单的完整信息。');
-      let added = 0;
       const ids = [...resolved.values()];
+      let submitted = 0;
+      report?.('writing', 0, ids.length);
       for (const group of chunkArray(ids, PAGE_SIZE)) {
         await call(API.add, { playlistId: playlist.id, songIdList: group }, 'POST');
-        added += group.length;
+        submitted += group.length;
+        report?.('writing', submitted, ids.length);
       }
+      const confirmed = new Set<string>();
+      let verificationFailed = false;
+      report?.('verifying', 0, ids.length);
+      try {
+        for (let offset = 0; offset < ids.length; offset += PAGE_SIZE) {
+          const tracks = await call<OpenApiRecord[]>(API.tracks, { playlistId: playlist.id, limit: PAGE_SIZE, offset });
+          if (!Array.isArray(tracks)) throw new BadGatewayException('网易云已接收写入请求，但未返回歌单曲目，请打开目标歌单核对。');
+          for (const track of tracks) {
+            const original = positiveId(track.originalId);
+            if (original && resolved.has(original)) confirmed.add(original);
+          }
+          report?.('verifying', Math.min(ids.length, offset + tracks.length), ids.length);
+          if (tracks.length < PAGE_SIZE) break;
+        }
+      } catch {
+        verificationFailed = true;
+      }
+      const added = confirmed.size;
+      const unresolved = wanted.size - resolved.size;
+      const unverified = verificationFailed ? resolved.size - added : 0;
+      const unconfirmed = verificationFailed ? 0 : resolved.size - added;
+      const skipped = detail.items.length - wanted.size;
+      const notes = [
+        skipped ? `${skipped} 首未匹配或重复，已跳过。` : '',
+        unresolved ? `${unresolved} 首未查到相同歌曲 ID，未替换成其他版本。` : '',
+        unconfirmed ? `${unconfirmed} 首已提交但未在目标歌单中确认，请打开歌单核对。` : '',
+        unverified ? `${unverified} 首已提交但暂时无法核对，请打开目标歌单确认，避免重复迁移。` : '',
+      ].filter(Boolean);
       return { platform: 'netease', playlistId: originalId, name: playlistName,
         url: `https://music.163.com/#/playlist?id=${originalId}`, added,
-        skipped: detail.items.length - wanted.size, failed: wanted.size - resolved.size };
+        skipped, failed: unresolved + unconfirmed,
+        ...(unverified ? { unverified } : {}),
+        ...(notes.length ? { warning: notes.join('') } : {}) };
     });
   }
 
@@ -289,14 +315,15 @@ export class NeteaseOpenApiAccountService {
     let session = await this.freshSession(userId);
     return async <T>(endpoint: OpenApiEndpoint, business: Record<string, unknown>, method: 'GET' | 'POST' = 'GET'): Promise<T> => {
       this.assertActive(userId);
-      try { return await this.client.request<T>(endpoint, business, session, method); }
+      const attempted = session;
+      try { return await this.client.request<T>(endpoint, business, attempted, method); }
       catch (error) {
         if (!(error instanceof NeteaseOpenApiError)) throw error;
         if (error.upstreamCode === 1407 || error.upstreamCode === 1408) {
           throw new UnauthorizedException('网易云官方授权已失效，请重新扫码。');
         }
         if (error.upstreamCode !== 1406) throw error;
-        session = await this.refreshSession(userId, session);
+        session = await this.refreshSession(userId, attempted);
         this.assertActive(userId);
         return this.client.request<T>(endpoint, business, session, method);
       }

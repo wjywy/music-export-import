@@ -438,6 +438,7 @@ export class PlaylistsService {
     userId: string,
     platform: Platform,
     threshold = 0.7,
+    options: { itemIds?: readonly string[]; onProgress?: (completed: number, total: number) => void } = {},
   ): Promise<{ platform: Platform; total: number; matched: number; message: string }> {
     if (platform !== 'netease' && platform !== 'qq' && platform !== 'apple') {
       throw new BadRequestException(
@@ -449,7 +450,9 @@ export class PlaylistsService {
     await this.getEntity(id, userId);
     await this.matcher.probe(platform);
 
-    const items = await this.items.find({ where: { playlistId: id }, order: { position: 'ASC' } });
+    const savedItems = await this.items.find({ where: { playlistId: id }, order: { position: 'ASC' } });
+    const selected = options.itemIds ? new Set(options.itemIds) : null;
+    const items = selected ? savedItems.filter((item) => selected.has(item.id)) : savedItems;
     if (!items.length) throw new BadRequestException('歌单里还没有曲目。');
 
     const existing = await this.matches.find({
@@ -465,26 +468,31 @@ export class PlaylistsService {
       aliasRows.map((alias) => [`${alias.titleKey}|${alias.artistKey}`, alias]),
     );
 
+    let completed = 0;
     const outcomes = await mapLimit(items, 8, async (item) => {
-      const current = existingByItem.get(item.id);
-      if (current?.source === 'manual') {
-        return { item, current: current ?? null, alias: null, result: null, preserved: true, error: null };
-      }
-      const alias = aliasByKey.get(
-        `${normalize(item.title).slice(0, 250)}|${normalize(item.artist).slice(0, 250)}`,
-      );
-      if (alias) {
-        return { item, current: current ?? null, alias, result: null, preserved: false, error: null };
-      }
       try {
-        const result = await this.matcher.best(
-          platform,
-          { title: item.title, artist: item.artist, durationMs: item.durationMs },
-          effectiveThreshold,
+        const current = existingByItem.get(item.id);
+        if (current?.source === 'manual') {
+          return { item, current: current ?? null, alias: null, result: null, preserved: true, error: null };
+        }
+        const alias = aliasByKey.get(
+          `${normalize(item.title).slice(0, 250)}|${normalize(item.artist).slice(0, 250)}`,
         );
-        return { item, current: current ?? null, alias: null, result, preserved: false, error: null };
-      } catch (error) {
-        return { item, current: current ?? null, alias: null, result: null, preserved: false, error };
+        if (alias) {
+          return { item, current: current ?? null, alias, result: null, preserved: false, error: null };
+        }
+        try {
+          const result = await this.matcher.best(
+            platform,
+            { title: item.title, artist: item.artist, durationMs: item.durationMs },
+            effectiveThreshold,
+          );
+          return { item, current: current ?? null, alias: null, result, preserved: false, error: null };
+        } catch (error) {
+          return { item, current: current ?? null, alias: null, result: null, preserved: false, error };
+        }
+      } finally {
+        options.onProgress?.(++completed, items.length);
       }
     });
 
@@ -498,6 +506,10 @@ export class PlaylistsService {
     let matched = 0;
     let reusedAliases = 0;
     for (const outcome of outcomes) {
+      if (outcome.error) {
+        if (outcome.current?.status === 'matched') matched += 1;
+        continue;
+      }
       if (outcome.preserved) {
         matched += 1;
         continue;
@@ -545,14 +557,15 @@ export class PlaylistsService {
     }
 
     const aliasNote = reusedAliases > 0 ? `，其中 ${reusedAliases} 首用了记住的映射` : '';
+    const failureNote = failures.length > 0 ? `，${failures.length} 首查询暂时失败，保留原有结果` : '';
     return {
       platform,
       total: items.length,
       matched,
       message:
         matched === items.length
-          ? `${PLATFORM_META[platform].name}：${matched} 首全部匹配${aliasNote}。`
-          : `${PLATFORM_META[platform].name}：匹配 ${matched} / ${items.length} 首${aliasNote}。`,
+          ? `${PLATFORM_META[platform].name}：${matched} 首全部匹配${aliasNote}${failureNote}。`
+          : `${PLATFORM_META[platform].name}：匹配 ${matched} / ${items.length} 首${aliasNote}${failureNote}。`,
     };
   }
 

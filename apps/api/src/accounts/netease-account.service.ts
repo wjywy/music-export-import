@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { PlatformCredential } from '../common/entities/platform-credential.entity';
 import { CredentialCipher } from '../platforms/credential-cipher.service';
 import type { PlaylistDetail } from '../playlists/playlists.service';
+import type { ReportPushProgress } from '../common/push-progress';
 import {
   AccountPushResult,
   AccountQr,
@@ -252,8 +253,9 @@ export class NeteaseAccountService {
     userId: string,
     detail: PlaylistDetail,
     name?: string,
+    report?: ReportPushProgress,
   ): Promise<AccountPushResult> {
-    if (await this.official?.ownsSession(userId)) return this.official!.push(userId, detail, name);
+    if (await this.official?.ownsSession(userId)) return this.official!.push(userId, detail, name, report);
     const session = await this.readSession(userId);
     const targetIds = uniqueNumericIds(
       detail.items.map((item) => {
@@ -273,6 +275,7 @@ export class NeteaseAccountService {
     }
 
     const playlistName = compactPlaylistName(name ?? detail.title, 40);
+    report?.('creating', 0, 1);
     const create = await neteaseApi.playlist_create({
       name: playlistName,
       privacy: '10',
@@ -303,6 +306,7 @@ export class NeteaseAccountService {
 
     let added = 0;
     let failed = 0;
+    report?.('writing', 0, targetIds.length);
     for (const chunk of chunkArray(targetIds, TRACK_BATCH)) {
       const response = await neteaseApi.playlist_tracks({
         op: 'add',
@@ -326,6 +330,7 @@ export class NeteaseAccountService {
         break;
       }
       added += chunk.length;
+      report?.('writing', added, targetIds.length);
     }
 
     return {

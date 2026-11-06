@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import type { ReportPushProgress } from '../common/push-progress';
+import { PlatformError } from '../common/platform-error';
 import { PlaylistsService } from '../playlists/playlists.service';
 import {
   AccountPlatform,
@@ -13,6 +15,7 @@ import { neteaseIdFromUrl, qqMidFromUrl } from './account.utils';
 
 @Injectable()
 export class AccountsService {
+  private readonly inFlight = new Set<string>();
   constructor(
     private readonly netease: NeteaseAccountService,
     private readonly qq: QqAccountService,
@@ -62,41 +65,63 @@ export class AccountsService {
     playlistId: string,
     platform: AccountPlatform,
     name?: string,
+    report?: ReportPushProgress,
   ): Promise<AccountPushResult> {
     if (platform !== 'netease' && platform !== 'qq') {
       throw new BadRequestException('目前只支持写入网易云音乐和 QQ 音乐。');
     }
-    let detail = await this.playlists.getDetail(playlistId, userId);
-    if (detail.items.length === 0) {
-      throw new BadRequestException('这张歌单还没有曲目，无法写入。');
-    }
-
-    const usableMatchId = (value: string | null): boolean =>
-      platform === 'netease'
-        ? Boolean(value && /^\d+$/.test(value) && Number(value) > 0)
-        : Boolean(value && value !== '0');
-    const needsMatch = detail.items.some((item) => {
-      const match = item.matches.find(
-        (entry) => entry.platform === platform && entry.status === 'matched',
-      );
-      if (usableMatchId(match?.remoteId ?? null)) return false;
-      if (item.sourcePlatform === platform) {
-        const sourceId =
-          platform === 'netease'
-            ? neteaseIdFromUrl(item.sourceUrl)
-            : qqMidFromUrl(item.sourceUrl);
-        if (usableMatchId(sourceId)) return false;
+    const lock = `${userId}:${playlistId}:${platform}`;
+    if (this.inFlight.has(lock)) throw new ConflictException('这张歌单正在写入，请等待当前迁移完成。');
+    this.inFlight.add(lock);
+    try {
+      let detail = await this.playlists.getDetail(playlistId, userId);
+      if (detail.items.length === 0) {
+        throw new BadRequestException('这张歌单还没有曲目，无法写入。');
       }
-      return true;
-    });
-    if (needsMatch) {
-      await this.playlists.match(playlistId, userId, platform);
-      detail = await this.playlists.getDetail(playlistId, userId);
-    }
 
-    if (platform === 'netease') {
-      return this.netease.push(userId, detail, name);
+      const usableMatchId = (value: string | null): boolean =>
+        platform === 'netease'
+          ? Boolean(value && /^\d+$/.test(value) && Number(value) > 0)
+          : Boolean(value && value !== '0');
+      const ready = (item: typeof detail.items[number]): boolean => {
+        const match = item.matches.find(
+          (entry) => entry.platform === platform && entry.status === 'matched',
+        );
+        if (usableMatchId(match?.remoteId ?? null)) return true;
+        if (item.sourcePlatform === platform) {
+          const sourceId =
+            platform === 'netease'
+              ? neteaseIdFromUrl(item.sourceUrl)
+              : qqMidFromUrl(item.sourceUrl);
+          if (usableMatchId(sourceId)) return true;
+        }
+        return false;
+      };
+      const pending = (item: typeof detail.items[number]): boolean => !ready(item) &&
+        !item.matches.some((entry) => entry.platform === platform && entry.status === 'missing');
+      const pendingItems = detail.items.filter(pending);
+      if (pendingItems.length) {
+        report?.('matching', 0, pendingItems.length);
+        try {
+          await this.playlists.match(playlistId, userId, platform, undefined, {
+            itemIds: pendingItems.map((item) => item.id),
+            onProgress: (completed, total) => report?.('matching', completed, total),
+          });
+        } catch (error) {
+          if (!(error instanceof PlatformError) || !detail.items.some(ready)) throw error;
+        }
+        detail = await this.playlists.getDetail(playlistId, userId);
+      }
+
+      const result = platform === 'netease'
+        ? await this.netease.push(userId, detail, name, report)
+        : await this.qq.push(userId, detail, name, report);
+      const pendingIds = new Set(pendingItems.map((item) => item.id));
+      const retryable = detail.items.filter((item) => pendingIds.has(item.id) && pending(item)).length;
+      if (retryable) result.warning = `${result.warning ?? ''}${retryable} 首曲目查询暂时失败，已跳过，可稍后重新匹配。`;
+      return result;
+    } finally {
+      this.inFlight.delete(lock);
     }
-    return this.qq.push(userId, detail, name);
   }
 }

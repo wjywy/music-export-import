@@ -273,6 +273,8 @@ export interface AccountPushResult {
   added: number;
   skipped: number;
   failed: number;
+  warning?: string;
+  unverified?: number;
 }
 
 export interface MatchResult {
@@ -291,4 +293,12 @@ export interface PushResult {
   skipped: number;
   failed: number;
   warning?: string | null;
+  unverified?: number;
+}
+
+export interface PushProgress {
+  stage: 'preparing' | 'matching' | 'resolving' | 'creating' | 'writing' | 'verifying' | 'done';
+  completed: number;
+  total: number;
+  percent: number;
 }

@@ -206,6 +206,33 @@ test('a late refresh cannot overwrite a newly authorized NetEase account', async
   assert.equal(f.read().accessToken, 'access-2');
 });
 
+test('parallel searches in one push refresh the session used by each failed request', async (t) => {
+  const f = fixture(t); await f.connect();
+  const late = deferred<unknown>(), firstRetry = deferred<unknown>(), retryStarted = deferred<void>();
+  const songs = [{ id: songId, originalId: 1 }, { id: 'c'.repeat(32), originalId: 2 }];
+  let oldRequests = 0;
+  f.reply((path, business, token) => {
+    if (path === API.searchSongs) {
+      if (token === 'access') {
+        oldRequests += 1;
+        return oldRequests === 1 ? { code: 1406 } : late.promise;
+      }
+      if (business.keyword === 'song-1 artist') { retryStarted.resolve(); return firstRetry.promise; }
+      firstRetry.resolve({ records: [songs[0]] });
+      return { records: [songs[1]] };
+    }
+    if (path === API.tracks) return songs;
+    return f.defaultReply(path);
+  });
+  const detail = { title: 'test', items: [1, 2].map((id) => ({ title: `song-${id}`, artist: 'artist',
+    sourcePlatform: 'netease', sourceUrl: `https://music.163.com/song?id=${id}`, matches: [] })) } as unknown as PlaylistDetail;
+  const writing = f.service.push('owner', detail);
+  await retryStarted.promise;
+  late.resolve({ code: 1406 });
+  assert.equal((await writing).added, 2);
+  assert.equal(f.calls.filter((call) => call.path === API.refresh).length, 1);
+});
+
 test('official imports paginate all songs and retain original IDs for sharing and matching', async (t) => {
   const f = fixture(t); await f.connect();
   f.reply((path, business) => {
@@ -234,6 +261,154 @@ test('official writes resolve exact original IDs and send encrypted IDs to the a
   assert.equal(result.url, 'https://music.163.com/#/playlist?id=101');
   assert.equal(result.added, 1); assert.equal(result.failed, 0);
   assert.equal(result.skipped, 0);
+});
+
+test('a song unavailable for playback can still be saved to a playlist', async (t) => {
+  const f = fixture(t); await f.connect();
+  f.reply((path) => path === API.searchSongs
+    ? { records: [{ id: songId, originalId: 1, visible: false }] }
+    : f.defaultReply(path));
+  const detail = { title: 'test', items: [{ title: 'song', artist: 'artist', sourcePlatform: 'netease',
+    sourceUrl: 'https://music.163.com/song?id=1', matches: [] }] } as unknown as PlaylistDetail;
+  const result = await f.service.push('owner', detail);
+  assert.equal(result.added, 1);
+  assert.equal(result.failed, 0);
+  assert.deepEqual(f.calls.find((call) => call.path === API.add)?.business.songIdList, [songId]);
+});
+
+test('ID lookups overlap within a small bound and keep the source order', async (t) => {
+  const f = fixture(t); await f.connect();
+  let active = 0, peak = 0;
+  const songs = Array.from({ length: 6 }, (_, i) => ({
+    id: (i + 1).toString(16).padStart(32, '0'), originalId: i + 1,
+  }));
+  f.reply(async (path, business) => {
+    if (path === API.searchSongs) {
+      active += 1; peak = Math.max(peak, active);
+      const id = Number(String(business.keyword).match(/song-(\d+)/)?.[1]);
+      await new Promise((done) => setTimeout(done, (7 - id) * 5));
+      active -= 1;
+      return { records: [songs[id - 1]] };
+    }
+    if (path === API.tracks) return songs;
+    return f.defaultReply(path);
+  });
+  const detail = { title: 'test', items: songs.map((song) => ({ title: `song-${song.originalId}`,
+    artist: 'artist', sourcePlatform: 'netease',
+    sourceUrl: `https://music.163.com/song?id=${song.originalId}`, matches: [] })) } as unknown as PlaylistDetail;
+  const progress: Array<{ stage: string; completed: number; total: number }> = [];
+  const result = await f.service.push('owner', detail, undefined, (stage, completed, total) => {
+    progress.push({ stage, completed, total });
+  });
+  assert.ok(peak > 1, 'lookups must not wait for every previous request');
+  assert.ok(peak <= 3, 'lookups must not flood the official API');
+  assert.equal(result.added, 6);
+  assert.deepEqual(progress.filter((value) => value.stage === 'resolving').map((value) => value.completed), [0, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(progress.filter((value) => value.stage === 'writing').map((value) => value.completed), [0, 6]);
+  assert.deepEqual(progress.filter((value) => value.stage === 'verifying').map((value) => value.completed), [0, 6]);
+  assert.deepEqual(f.calls.find((call) => call.path === API.add)?.business.songIdList, songs.map((song) => song.id));
+});
+
+test('title-only lookup finds the exact original ID without substituting another version', async (t) => {
+  const f = fixture(t); await f.connect();
+  f.reply((path, business) => {
+    if (path === API.searchSongs) return { records: business.keyword === 'song'
+      ? [{ id: songId, originalId: 1, visible: false }]
+      : [{ id: 'd'.repeat(32), originalId: 99, visible: true }] };
+    return f.defaultReply(path);
+  });
+  const detail = { title: 'test', items: [{ title: 'song', artist: 'artist', sourcePlatform: 'netease',
+    sourceUrl: 'https://music.163.com/song?id=1', matches: [] }] } as unknown as PlaylistDetail;
+  const result = await f.service.push('owner', detail);
+  assert.equal(result.added, 1);
+  assert.deepEqual(f.calls.filter((call) => call.path === API.searchSongs).map((call) => call.business.keyword), ['song artist', 'song']);
+  assert.deepEqual(f.calls.find((call) => call.path === API.add)?.business.songIdList, [songId]);
+});
+
+test('write counts use the songs actually present, even when a batch reports success', async (t) => {
+  const f = fixture(t); await f.connect();
+  f.reply((path) => path === API.searchSongs ? { records: [
+    { id: songId, originalId: 1 }, { id: 'c'.repeat(32), originalId: 2 },
+  ] } : f.defaultReply(path));
+  const detail = { title: 'test', items: [1, 2].map((id) => ({ title: 'song', artist: 'artist',
+    sourcePlatform: 'netease', sourceUrl: `https://music.163.com/song?id=${id}`, matches: [] })) } as unknown as PlaylistDetail;
+  const result = await f.service.push('owner', detail);
+  assert.equal(result.added, 1);
+  assert.equal(result.failed, 1);
+  assert.match('warning' in result ? String(result.warning) : '', /1 首.*未.*确认/);
+  assert.equal(f.calls.filter((call) => call.path === API.searchSongs).length, 1);
+});
+
+test('a verification timeout retains the created playlist and marks submitted songs unverified', async (t) => {
+  const f = fixture(t); await f.connect();
+  f.reply((path) => {
+    if (path === API.tracks) throw new Error('temporary verification timeout');
+    return f.defaultReply(path);
+  });
+  const detail = { title: 'test', items: [{ title: 'song', artist: 'artist', sourcePlatform: 'netease',
+    sourceUrl: 'https://music.163.com/song?id=1', matches: [] }] } as unknown as PlaylistDetail;
+  const result = await f.service.push('owner', detail);
+  assert.equal(result.url, 'https://music.163.com/#/playlist?id=101');
+  assert.equal(result.added, 0);
+  assert.equal(result.failed, 0);
+  assert.equal('unverified' in result ? result.unverified : undefined, 1);
+  assert.match(result.warning ?? '', /核对.*重复迁移/);
+  assert.equal(f.calls.filter((call) => call.path === API.create).length, 1);
+  assert.equal(f.calls.filter((call) => call.path === API.add).length, 1);
+});
+
+test('a failed parallel lookup drains active requests before disconnect finishes', { timeout: 2000 }, async (t) => {
+  const f = fixture(t); await f.connect();
+  const started = deferred<void>(), release = deferred<void>();
+  let active = 0, searches = 0;
+  f.reply(async (path) => {
+    if (path !== API.searchSongs) return f.defaultReply(path);
+    searches += 1; active += 1;
+    if (searches === 3) started.resolve();
+    await started.promise;
+    if (searches === 3 && active === 3) { active -= 1; return { code: 500 }; }
+    await release.promise;
+    active -= 1;
+    return { records: [] };
+  });
+  const detail = { title: 'test', items: [1, 2, 3, 4].map((id) => ({ title: `song-${id}`, artist: 'artist',
+    sourcePlatform: 'netease', sourceUrl: `https://music.163.com/song?id=${id}`, matches: [] })) } as unknown as PlaylistDetail;
+  const pushing = f.service.push('owner', detail);
+  const rejected = assert.rejects(pushing, /500/);
+  await started.promise;
+  let disconnected = false;
+  const disconnect = f.service.disconnect('owner').then(() => { disconnected = true; });
+  await new Promise((done) => setImmediate(done));
+  assert.equal(disconnected, false);
+  release.resolve();
+  await rejected; await disconnect;
+  assert.equal(active, 0);
+  assert.equal(searches, 3);
+  assert.equal(f.calls.filter((call) => call.path === API.create).length, 0);
+  assert.equal(f.rows.size, 0);
+});
+
+test('large writes verify every page and keep duplicate source songs out of the batch', async (t) => {
+  const f = fixture(t); await f.connect();
+  const songs = Array.from({ length: 501 }, (_, i) => ({ id: (i + 1).toString(16).padStart(32, '0'), originalId: i + 1 }));
+  f.reply((path, business) => {
+    if (path === API.searchSongs) {
+      const group = Number(String(business.keyword).split('-')[1]);
+      return { records: songs.slice(group * 100, (group + 1) * 100) };
+    }
+    if (path === API.tracks) return songs.slice(Number(business.offset), Number(business.offset) + 500);
+    return f.defaultReply(path);
+  });
+  const items = songs.map((song, i) => ({ title: `group-${Math.floor(i / 100)}`, artist: '',
+    sourcePlatform: 'netease', sourceUrl: `https://music.163.com/song?id=${song.originalId}`, matches: [] }));
+  const detail = { title: 'test', items: [...items, items[0]] } as unknown as PlaylistDetail;
+  const result = await f.service.push('owner', detail);
+  assert.equal(result.added, 501); assert.equal(result.failed, 0); assert.equal(result.skipped, 1);
+  assert.deepEqual(f.calls.filter((call) => call.path === API.tracks).map((call) => call.business.offset), [0, 500]);
+  const batches = f.calls.filter((call) => call.path === API.add).map((call) => call.business.songIdList as string[]);
+  assert.deepEqual(batches.map((batch) => batch.length), [500, 1]);
+  assert.deepEqual(batches.flat(), songs.map((song) => song.id));
+  assert.equal(f.calls.filter((call) => call.path === API.searchSongs).length, 6);
 });
 
 test('an unknown create response never falls back to adding to an existing playlist', async (t) => {

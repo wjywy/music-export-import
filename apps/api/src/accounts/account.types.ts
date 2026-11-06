@@ -38,4 +38,6 @@ export interface AccountPushResult {
   added: number;
   skipped: number;
   failed: number;
+  warning?: string;
+  unverified?: number;
 }

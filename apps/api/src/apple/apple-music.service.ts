@@ -15,6 +15,7 @@ import {
   PlaylistsService,
 } from '../playlists/playlists.service';
 import { AppleTokenService } from './apple-token.service';
+import type { ReportPushProgress } from '../common/push-progress';
 
 const APPLE_API = 'https://api.music.apple.com';
 const MAX_TRACKS_PER_REQUEST = 100;
@@ -211,6 +212,7 @@ export class AppleMusicService {
   async pushPlaylist(
     userId: string,
     playlistId: string,
+    report?: ReportPushProgress,
   ): Promise<ApplePushResult> {
     const developerToken = this.developerToken();
     const credential = await this.credentials.findOne({
@@ -247,7 +249,10 @@ export class AppleMusicService {
       }
 
       if (this.appleTrackIds(detail).length === 0) {
-        await this.playlists.match(playlistId, userId, 'apple');
+        report?.('matching', 0, detail.items.length);
+        await this.playlists.match(playlistId, userId, 'apple', undefined, {
+          onProgress: (completed, total) => report?.('matching', completed, total),
+        });
         detail = await this.playlists.getDetail(playlistId, userId);
       }
 
@@ -271,6 +276,7 @@ export class AppleMusicService {
         240,
       );
       const firstChunk = trackIds.slice(0, MAX_TRACKS_PER_REQUEST);
+      report?.('creating', 0, 1);
       let createResponse: Response;
       try {
         createResponse = await this.fetchWithRetry(
@@ -305,6 +311,7 @@ export class AppleMusicService {
       let added = firstChunk.length;
       let failed = 0;
       let warning: string | null = null;
+      report?.('writing', added, trackIds.length);
 
       for (
         let offset = firstChunk.length;
@@ -319,6 +326,7 @@ export class AppleMusicService {
         );
         added += outcome.added;
         failed += outcome.failed;
+        report?.('writing', Math.min(trackIds.length, offset + chunk.length), trackIds.length);
         if (outcome.networkFailed) {
           failed += trackIds.length - (offset + chunk.length);
           warning =

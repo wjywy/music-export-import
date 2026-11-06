@@ -13,8 +13,10 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   PushResult,
+  PushProgress,
   User,
 } from './types';
+import { PushStreamError, readPushStream } from './push-progress';
 
 const API_BASE = (
   import.meta.env.VITE_API_BASE ?? `${import.meta.env.BASE_URL}api`
@@ -52,12 +54,13 @@ export function setToken(token: string | null): void {
 interface RequestOptions extends RequestInit {
   auth?: boolean;
   timeoutMs?: number;
+  onProgress?: (value: PushProgress) => void;
 }
 
 export const ACCOUNT_QR_TIMEOUT_SECONDS = 45;
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { auth = true, timeoutMs = 30_000, headers, ...rest } = options;
+  const { auth = true, timeoutMs = 30_000, headers, signal, onProgress, ...rest } = options;
   const finalHeaders: Record<string, string> = {
     ...(rest.body ? { 'content-type': 'application/json' } : {}),
     ...(headers as Record<string, string> | undefined),
@@ -70,9 +73,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     response = await fetch(`${API_BASE}${path}`, {
       ...rest,
       headers: finalHeaders,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
+    if (signal?.aborted) throw error;
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw new ApiError('请求超时了，请稍后重试。', 0);
     }
@@ -97,6 +101,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (response.status === 204) return undefined as T;
+  if (onProgress && response.headers.get('content-type')?.includes('text/event-stream')) {
+    try {
+      return await readPushStream<T>(response, onProgress);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (error instanceof PushStreamError) {
+        if (error.status === 401 && auth && token) window.dispatchEvent(new CustomEvent('dukou:unauthorized'));
+        throw new ApiError(error.message, error.status);
+      }
+      throw new ApiError('进度连接中断，迁移可能仍在进行，请先到目标平台查看歌单。', 0);
+    }
+  }
   return (await response.json()) as T;
 }
 
@@ -150,11 +166,14 @@ export const api = {
     }),
   disconnectAccount: (platform: AccountPlatform) =>
     request<{ ok: boolean }>(`/accounts/${platform}`, { method: 'DELETE' }),
-  pushPlaylist: (playlistId: string, platform: AccountPlatform) =>
+  pushPlaylist: (playlistId: string, platform: AccountPlatform, onProgress?: (value: PushProgress) => void, signal?: AbortSignal) =>
     request<PushResult>(`/playlists/${playlistId}/push`, {
       method: 'POST',
       body: jsonBody({ platform }),
       timeoutMs: 900_000,
+      headers: onProgress ? { accept: 'text/event-stream' } : undefined,
+      onProgress,
+      signal,
     }),
 
   matchPlaylist: (playlistId: string, platform: Platform) =>
@@ -176,10 +195,13 @@ export const api = {
     request<{ ok: boolean }>('/platforms/apple/authorize', {
       method: 'DELETE',
     }),
-  applePushPlaylist: (playlistId: string) =>
+  applePushPlaylist: (playlistId: string, onProgress?: (value: PushProgress) => void, signal?: AbortSignal) =>
     request<ApplePushResult>(`/platforms/apple/playlists/${playlistId}/push`, {
       method: 'POST',
       timeoutMs: 900_000,
+      headers: onProgress ? { accept: 'text/event-stream' } : undefined,
+      onProgress,
+      signal,
     }),
   appleImportLinks: (playlistId: string) =>
     request<AppleImportLinks>(

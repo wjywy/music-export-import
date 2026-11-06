@@ -354,3 +354,22 @@ test('rejects Soundiiz link generation for an unknown playlist', async () => {
     .set(auth(token))
     .expect(404);
 });
+
+test('streaming migrations still require authentication and validate their platform', async () => {
+  await request(http).post(`/api/playlists/${playlistId}/push`)
+    .set('accept', 'text/event-stream').send({ platform: 'netease' }).expect(401);
+  await request(http).post(`/api/playlists/${playlistId}/push`)
+    .set(auth(token)).set('accept', 'text/event-stream').send({ platform: 'unsupported' }).expect(400);
+});
+
+test('a streaming migration cannot write another user’s playlist or report completion', async () => {
+  const response = await request(http).post(`/api/playlists/${playlistId}/push`)
+    .set(auth(secondToken)).set('accept', 'text/event-stream').send({ platform: 'netease' }).expect(200);
+  assert.match(response.headers['content-type'], /text\/event-stream/);
+  const events = response.text.split('\n\n').filter((line) => line.startsWith('data:'))
+    .map((line) => JSON.parse(line.slice(6)));
+  assert.equal(events[0].type, 'progress');
+  assert.equal(events.at(-1).type, 'error');
+  assert.equal(events.at(-1).status, 404);
+  assert.equal(events.some((event) => event.type === 'result' || event.progress?.percent === 100), false);
+});

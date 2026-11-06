@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { PlatformCredential } from '../common/entities/platform-credential.entity';
 import { CredentialCipher } from '../platforms/credential-cipher.service';
 import type { PlaylistDetail } from '../playlists/playlists.service';
+import type { ReportPushProgress } from '../common/push-progress';
 import {
   AccountPushResult,
   AccountQr,
@@ -147,6 +148,7 @@ export class QqAccountService {
     userId: string,
     detail: PlaylistDetail,
     name?: string,
+    report?: ReportPushProgress,
   ): Promise<AccountPushResult> {
     const session = await this.readSession(userId);
     const mids = this.collectMids(detail);
@@ -156,12 +158,13 @@ export class QqAccountService {
       );
     }
 
-    const numericIds = await this.resolveNumericIds(mids, session.token);
+    const numericIds = await this.resolveNumericIds(mids, session.token, report);
     if (numericIds.length === 0) {
       throw new BadGatewayException('QQ 音乐没有解析出可写入的歌曲 ID。');
     }
 
     const playlistName = compactPlaylistName(name ?? detail.title, 20);
+    report?.('creating', 0, 1);
     const create = await this.call(
       '/user/playlist/create',
       {
@@ -187,6 +190,8 @@ export class QqAccountService {
     let added = 0;
     let skipped = detail.items.length - numericIds.length;
     let failed = 0;
+    let submitted = 0;
+    report?.('writing', 0, numericIds.length);
 
     for (const chunk of chunkArray(numericIds, TRACK_BATCH)) {
       const response = await this.call(
@@ -217,6 +222,8 @@ export class QqAccountService {
       } else {
         added += chunk.length;
       }
+      submitted += chunk.length;
+      report?.('writing', submitted, numericIds.length);
     }
 
     return {
@@ -251,9 +258,12 @@ export class QqAccountService {
   private async resolveNumericIds(
     mids: string[],
     token: string,
+    report?: ReportPushProgress,
   ): Promise<string[]> {
     const direct = uniqueNumericIds(mids);
     const needResolve = mids.filter((mid) => !/^\d{1,20}$/.test(mid));
+    let completed = direct.length;
+    report?.('resolving', completed, mids.length);
     if (direct.length === mids.length) return direct;
 
     const resolved: string[] = [...direct];
@@ -275,6 +285,8 @@ export class QqAccountService {
           resolved.push(String(result.song.id));
         }
       }
+      completed += chunk.length;
+      report?.('resolving', completed, mids.length);
     }
 
     return uniqueNumericIds(resolved);

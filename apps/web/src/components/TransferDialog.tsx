@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight } from './Icons';
 import { Dialog } from './Dialog';
 import { Loading } from './Loading';
+import { PushProgress } from './PushProgress';
 import { useToast } from '../context/ToastContext';
 import { ACCOUNT_QR_TIMEOUT_SECONDS, api } from '../lib/api';
 import {
@@ -15,6 +16,7 @@ import type {
   AppleImportLinks,
   Platform,
   PushResult,
+  PushProgress as Progress,
   Track,
   TransferTarget,
 } from '../lib/types';
@@ -115,7 +117,11 @@ export function TransferDialog({
   const [cookieBusy, setCookieBusy] = useState(false);
   const [cookieError, setCookieError] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
+  const [pushProgress, setPushProgress] = useState<Progress | null>(null);
+  const pushRequest = useRef<AbortController | null>(null);
+  const pendingReviews = useRef(new Map<string, { result: PushResult; progress: Progress }>());
   const [matching, setMatching] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [appleConnecting, setAppleConnecting] = useState(false);
   const [pushResult, setPushResult] = useState<PushResult | null>(null);
   const [importLinks, setImportLinks] = useState<AppleImportLinks | null>(null);
@@ -125,25 +131,30 @@ export function TransferDialog({
   const isApple = target === 'apple';
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || disconnecting || pushRequest.current || pendingReviews.current.has(`${playlistId}:${target}`)) return;
     setTarget(sourcePlatform === 'qq' ? 'netease' : 'qq');
   }, [open, sourcePlatform]);
 
   useEffect(() => {
+    if (pushRequest.current) return;
     setQr(null);
     setQrState('idle');
     setAccountError(null);
     setCookieOpen(false);
     setCookieInput('');
     setCookieError(null);
-    setPushResult(null);
+    const pending = pendingReviews.current.get(`${playlistId}:${target}`);
+    setPushResult(pending?.result ?? null);
+    setPushProgress(pending?.progress ?? null);
     setMatching(false);
     setAppleConnecting(false);
     setImportLinks(null);
     setCreatingLinks(false);
     setLinkError(null);
     return () => { qrRequest.current += 1; };
-  }, [open, target]);
+  }, [open, target, playlistId]);
+
+  useEffect(() => () => pushRequest.current?.abort(), []);
 
   const playlist = useQuery({
     queryKey: ['playlist', playlistId],
@@ -253,17 +264,21 @@ export function TransferDialog({
     }
   }
 
-  async function matchApple() {
+  async function matchTarget() {
+    if (matching || disconnecting || pushRequest.current) return;
     setMatching(true);
     setAccountError(null);
-    setPushResult(null);
+    if (!pendingReviews.current.has(`${playlistId}:${target}`)) {
+      setPushResult(null);
+      setPushProgress(null);
+    }
     try {
-      const result = await api.matchPlaylist(playlistId, 'apple');
+      const result = await api.matchPlaylist(playlistId, target);
       await queryClient.invalidateQueries({ queryKey: ['playlist', playlistId] });
       toast(result.message);
     } catch (error) {
       setAccountError(
-        error instanceof Error ? error.message : '匹配 Apple Music 失败。',
+        error instanceof Error ? error.message : '匹配失败，请重试。',
       );
     } finally {
       setMatching(false);
@@ -292,30 +307,44 @@ export function TransferDialog({
   }
 
   async function pushNow() {
+    const reviewKey = `${playlistId}:${target}`;
+    if (disconnecting || pushRequest.current || pendingReviews.current.has(reviewKey)) return;
+    const request = new AbortController();
+    pushRequest.current = request;
     setPushing(true);
+    setPushProgress({ stage: 'preparing', completed: 0, total: 0, percent: 0 });
     setAccountError(null);
     setPushResult(null);
+    let latestProgress: Progress = { stage: 'preparing', completed: 0, total: 0, percent: 0 };
+    const onProgress = (value: Progress) => { latestProgress = value; setPushProgress(value); };
     try {
-      const result =
+      const result: PushResult =
         target === 'apple'
-          ? await api.applePushPlaylist(playlistId)
-          : await api.pushPlaylist(playlistId, target);
+          ? await api.applePushPlaylist(playlistId, onProgress, request.signal)
+          : await api.pushPlaylist(playlistId, target, onProgress, request.signal);
+      if (result.unverified) pendingReviews.current.set(reviewKey, { result, progress: latestProgress });
       setPushResult(result);
       await queryClient.invalidateQueries({ queryKey: ['playlist', playlistId] });
       toast(
-        result.failed > 0
+        result.unverified
+          ? `已提交 ${result.added + result.unverified} 首，请打开目标歌单核对。`
+          : result.failed > 0
           ? `写入 ${result.added} 首，失败 ${result.failed} 首。`
           : `已写入 ${result.added} 首。`,
         result.failed > 0 ? 'error' : 'default',
       );
     } catch (error) {
+      if (request.signal.aborted) return;
       setAccountError(error instanceof Error ? error.message : '写入失败，请重试。');
     } finally {
+      pushRequest.current = null;
       setPushing(false);
     }
   }
 
   async function disconnect() {
+    if (disconnecting) return;
+    setDisconnecting(true);
     setAccountError(null);
     try {
       if (isApple) {
@@ -327,10 +356,14 @@ export function TransferDialog({
         await queryClient.invalidateQueries({ queryKey: ['accounts'] });
         toast('已断开账号。');
       }
+      pendingReviews.current.delete(`${playlistId}:${target}`);
       setPushResult(null);
+      setPushProgress(null);
       setQr(null);
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : '断开失败。');
+    } finally {
+      setDisconnecting(false);
     }
   }
 
@@ -379,7 +412,11 @@ export function TransferDialog({
     target === 'qq' ? 'QQ 音乐' : target === 'netease' ? '网易云音乐' : 'Apple Music';
   const total = data?.itemCount ?? 0;
   const matched = data?.matches[target] ?? 0;
-  const needsMatch = Boolean(data && matched < total && data.sourcePlatform !== target);
+  const unchecked = data?.items.filter((item) => item.sourcePlatform !== target &&
+    !item.matches.some((entry) => entry.platform === target)).length ?? 0;
+  const needsMatch = unchecked > 0;
+  const missing = data?.items.filter((item) => item.sourcePlatform !== target &&
+    item.matches.some((entry) => entry.platform === target && entry.status === 'missing')).length ?? 0;
   const availableTargets =
     sourcePlatform === 'apple'
       ? TARGETS.filter((entry) => entry.value !== 'apple')
@@ -392,18 +429,18 @@ export function TransferDialog({
       ? '打开手机 QQ 扫一扫，确认登录。'
       : '打开网易云音乐 App 扫一扫，确认登录。';
   const canPushApple =
-    appleAuthorized && matched > 0 && !pushing && !matching && !appleOverLimit;
+    appleAuthorized && matched > 0 && !pushing && !matching && !disconnecting && !appleOverLimit;
 
   return (
     <Dialog
       open={open}
       wide
       title="迁移这张歌单"
-      subtitle="选一个目标，扫码或授权一次；渡口会先匹配，再写进你的账号。"
+      subtitle="已有匹配会直接沿用，扫码或授权后写进你的账号。"
       onClose={onClose}
       footer={
         <button type="button" className="btn btn-primary btn-sm" onClick={onClose}>
-          完成
+          {pushing ? '收起，继续迁移' : '完成'}
         </button>
       }
     >
@@ -414,7 +451,7 @@ export function TransferDialog({
             type="button"
             className="segment-btn"
             aria-pressed={target === entry.value}
-            disabled={pushing || matching}
+            disabled={pushing || matching || disconnecting}
             onClick={() => setTarget(entry.value)}
           >
             <span className="monogram">{entry.monogram}</span>
@@ -439,14 +476,13 @@ export function TransferDialog({
             {isApple ? (
               <span>
                 {appleConfigured
-                  ? matched < total
-                    ? '先匹配，再写入'
-                    : '可以写入'
+                  ? matched > 0 ? '沿用已有匹配' : '请先匹配'
                   : 'Soundiiz 免费导入'}
               </span>
             ) : needsMatch ? (
-              <span>写入前自动匹配</span>
-            ) : null}
+              <span>仅补查 {unchecked} 首新曲目</span>
+            ) : <span>沿用已有匹配</span>}
+            {missing > 0 && (!isApple || appleConfigured) ? <span>{missing} 首未匹配，将跳过</span> : null}
           </div>
 
           {isApple ? (
@@ -636,8 +672,8 @@ export function TransferDialog({
                         <button
                           type="button"
                           className="btn btn-quiet btn-sm"
-                          disabled={matching || pushing || appleOverLimit}
-                          onClick={() => void matchApple()}
+                          disabled={matching || pushing || disconnecting || appleOverLimit}
+                          onClick={() => void matchTarget()}
                         >
                           {matching
                             ? '正在匹配…'
@@ -656,7 +692,7 @@ export function TransferDialog({
                         <button
                           type="button"
                           className="btn btn-quiet btn-sm"
-                          disabled={matching || pushing}
+                          disabled={matching || pushing || disconnecting}
                           onClick={() => void disconnect()}
                         >
                           断开
@@ -671,11 +707,6 @@ export function TransferDialog({
                     </div>
                   ) : null}
 
-                  {pushing ? (
-                    <div className="panel-row">
-                      <Loading label="正在写入 Apple Music 资料库…" />
-                    </div>
-                  ) : null}
                 </>
               )}
             </section>
@@ -699,23 +730,33 @@ export function TransferDialog({
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      disabled={pushing}
+                      disabled={pushing || matching || disconnecting || Boolean(pushResult?.unverified)}
                       onClick={() => void pushNow()}
                     >
                       {pushing
-                        ? needsMatch
-                          ? '正在匹配并写入…'
+                        ? pushProgress?.stage === 'matching'
+                          ? '正在补查新曲目…'
                           : '正在写入…'
-                        : `一键迁移（${total} 首）`}
+                        : pushResult?.unverified ? '已提交，请先核对' : `一键迁移（${total} 首）`}
                     </button>
                     <button
                       type="button"
                       className="btn btn-quiet btn-sm"
+                      disabled={pushing || matching || disconnecting}
+                      onClick={() => void matchTarget()}
+                    >
+                      {matching ? '正在匹配…' : '重新匹配'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-quiet btn-sm"
+                      disabled={pushing || matching || disconnecting}
                       onClick={() => void disconnect()}
                     >
-                      断开账号
+                      {disconnecting ? '正在断开…' : '断开账号'}
                     </button>
                   </div>
+                  {matching ? <Loading label="正在重新匹配歌曲…" /> : null}
                 </>
               ) : (
                 <>
@@ -833,18 +874,17 @@ export function TransferDialog({
                 </div>
               ) : null}
 
-              {pushing ? (
-                <div className="panel-row">
-                  <Loading label={needsMatch ? '正在匹配并写入…' : '正在写入…'} />
-                </div>
-              ) : null}
             </section>
           )}
+
+          {pushProgress ? <PushProgress progress={pushProgress} failed={!pushResult && Boolean(accountError)}
+            awaitingVerification={Boolean(pushResult?.unverified)} /> : null}
 
           {pushResult ? (
             <div className="push-result">
               <p>
-                已写入 {pushResult.added} 首
+                {pushResult.unverified ? `已确认 ${pushResult.added} 首，${pushResult.unverified} 首待核对`
+                  : `已写入 ${pushResult.added} 首`}
                 {pushResult.skipped > 0 ? `，跳过 ${pushResult.skipped} 首` : ''}
                 {pushResult.failed > 0 ? `，失败 ${pushResult.failed} 首` : ''}。
               </p>

@@ -146,6 +146,7 @@ location /tool/music/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
+    proxy_buffering off;
 }
 ```
 
@@ -188,11 +189,15 @@ curl -fsSI https://a2a-platform.com/tool/music/og-image.png
 
 ```bash
 cd /home/admin/dukou
-git pull --ff-only
-sudo docker compose -p dukou -f docker-compose.prod.yml --env-file .env.production up -d --build
+git pull --ff-only origin main
+bash scripts/deploy-prod.sh
 ```
 
-migration 会在 API 启动前自动执行。`VITE_BASE` 变了才需要重新构建前端；普通后端更新只重建 API。
+脚本沿用现有 `.env.production`，先依次构建 API 和 web 镜像以降低内存峰值，等数据库和 API 健康后重新创建 web，最后通过 web 检查 API 健康状态。web 必须在 API 更新后重新创建，让 nginx 使用新的 API 容器地址。脚本保留 MySQL 数据卷，migration 在 API 启动前自动执行。
+
+这次的实时进度需要同时更新 API 和 web。API 通过已认证的 POST 请求返回 `text/event-stream`；浏览器请求 JSON 时保留原来的返回格式。容器 nginx 会转发 `X-Accel-Buffering: no`，当前 Caddy 可直接转发进度。若使用其他 nginx 反代，按上面的配置关闭响应缓冲。
+
+网易云官方扫码需要服务器 `.env.production` 中已有 `NETEASE_OPENAPI_APP_ID`、`NETEASE_OPENAPI_APP_KEY` 和 `NETEASE_OPENAPI_PRIVATE_KEY`。本地授权保存在本地数据库，服务器部署后需在服务器页面扫码连接一次。不要用本地 `.env` 覆盖服务器的数据库密码或加密密钥。
 
 ## 六、备份
 

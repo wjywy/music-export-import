@@ -4,10 +4,14 @@ import {
   Delete,
   Get,
   Header,
+  Headers,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { respondToPush } from '../common/push-progress';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -40,8 +44,9 @@ export class AppleController {
   }
 
   @Post('playlists/:id/push')
-  push(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.apple.pushPlaylist(user.sub, id);
+  push(@CurrentUser() user: AuthUser, @Param('id') id: string,
+    @Headers('accept') accept: string | undefined, @Res() response: Response) {
+    return respondToPush(response, accept, (report) => this.apple.pushPlaylist(user.sub, id, report));
   }
 
   @Post('playlists/:id/soundiiz')
