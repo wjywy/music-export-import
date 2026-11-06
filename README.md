@@ -26,7 +26,7 @@
 5. Apple 免费导入：点「生成 Apple Music 导入链接」→ 打开 Soundiiz → 登录 Apple Music → 确认导入；超过 200 首按段打开。
 6. 写入完成后可以直接打开目标平台的歌单。
 
-QQ / 网易云写入使用平台非公开接口，可能受风控或改版影响；Apple 直写走官方 MusicKit API。失败不会改动你已有的歌单，但可能留下新建了一半的目标歌单，需要到目标平台手动删除。Apple 免费导入使用 Soundiiz 公共导入 API：歌单的曲名 / 歌手会发给 Soundiiz 生成临时链接，渡口不保存 Apple 账号。
+网易云配置开放平台后使用官方 API，Apple 直写走官方 MusicKit API。QQ 音乐及网易云的 Cookie 模式写入使用非公开接口，可能受风控或改版影响。失败不会改动你已有的歌单，但可能留下新建了一半的目标歌单，需要到目标平台手动删除。Apple 免费导入使用 Soundiiz 公共导入 API：歌单的曲名 / 歌手会发给 Soundiiz 生成临时链接，渡口不保存 Apple 账号。
 
 ## 部署
 
@@ -149,9 +149,10 @@ pnpm dev
 
 ## 注意
 
-- QQ / 网易云写入依赖平台非公开接口，可能触发风控或随改版失效。
-- 网易云扫码使用官网登录会话。API 镜像自带 Chromium，本地会自动寻找 Chrome，也可用 `CHROME_PATH` 指定浏览器路径。打开账号面板时会提前准备一张短时二维码，未使用的浏览器会话会自动回收。
-- Node 接口返回二维码标识只能证明取码成功。官网会话还会初始化浏览器 Cookie 和登录链路，渡口正常扫码入口统一使用官网会话。图片编码仍由 Node 完成。
+- QQ 音乐和网易云的 Cookie 模式写入依赖平台非公开接口，可能触发风控或随改版失效。
+- 配置 `NETEASE_OPENAPI_APP_ID`、`NETEASE_OPENAPI_APP_KEY`、`NETEASE_OPENAPI_PRIVATE_KEY` 后，网易云扫码与歌单写入使用官方开放平台。部署者申请一次应用凭证，用户各自扫码；二维码有效期为 5 分钟，授权令牌加密存储并自动续期。私钥支持单行 PKCS#8 Base64 或用 `\n` 分隔的 PEM，不要提交真实凭证。
+- 未配置开放平台时，网易云扫码使用官网登录会话。API 镜像自带 Chromium，本地会自动寻找 Chrome，也可用 `CHROME_PATH` 指定浏览器路径。打开账号面板时会提前准备一张短时二维码，未使用的浏览器会话会自动回收。
+- 官网扫码模式由浏览器初始化 Cookie 和登录链路，Node 负责图片编码；该模式二维码在取码后最多保留 2 分钟。
 - Apple Music 免费导入依赖 Soundiiz：免费版单次最多 200 首，链接 24 小时有效；超过 200 首分段。TuneMyMusic 保留为下载文件备用。
 - 歌单曲名 / 歌手会发给 Soundiiz 生成临时链接；渡口不保存 Soundiiz 或 Apple 账号。
 - Apple Music 站内直写走官方 API，但需要 Apple Developer Program 和用户 Apple Music 订阅；v1 只支持 `cn` 区。

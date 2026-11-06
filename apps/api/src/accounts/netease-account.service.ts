@@ -27,6 +27,8 @@ import {
 } from './account.utils';
 import type { BrowserQrSession } from './netease-qr-browser';
 import { NeteaseQrPool } from './netease-qr-pool';
+import { NeteaseOpenApiAccountService } from './netease-openapi-account.service';
+import type { ParsedRef, PlatformAdapter, RemotePlaylist } from '../platforms/adapter.interface';
 
 type ApiResponse = {
   status?: number;
@@ -77,6 +79,7 @@ export class NeteaseAccountService {
     private readonly credentials: Repository<PlatformCredential>,
     private readonly cipher: CredentialCipher,
     private readonly qrPool: NeteaseQrPool,
+    private readonly official?: NeteaseOpenApiAccountService,
   ) {}
 
   async cookieFor(userId: string): Promise<string | null> {
@@ -88,6 +91,7 @@ export class NeteaseAccountService {
   }
 
   async status(userId: string): Promise<AccountStatus> {
+    if (this.official?.enabled) return this.official.status(userId);
     const row = await this.credentials.findOne({
       where: { userId, platform: 'netease' },
     });
@@ -119,6 +123,7 @@ export class NeteaseAccountService {
   }
 
   async startQr(userId: string): Promise<AccountQr> {
+    if (this.official?.enabled) return this.official.startQr(userId);
     const existing = this.browserStarts.get(userId);
     if (existing) return existing;
     const start = this.startBrowserQr(userId).finally(() => this.browserStarts.delete(userId));
@@ -127,6 +132,7 @@ export class NeteaseAccountService {
   }
 
   async checkQr(userId: string, key: string): Promise<AccountQrStatus> {
+    if (this.official?.enabled) return this.official.checkQr(userId, key);
     const browser = this.browserSessions.get(key);
     if (browser?.userId === userId) {
       const { session } = browser;
@@ -208,6 +214,7 @@ export class NeteaseAccountService {
   }
 
   async disconnect(userId: string): Promise<{ ok: true }> {
+    if (this.official?.enabled) return this.official.disconnect(userId);
     // Stop new polls before awaiting any in-flight validation.
     const closing = [...this.browserSessions.entries()]
       .filter(([, entry]) => entry.userId === userId)
@@ -246,6 +253,7 @@ export class NeteaseAccountService {
     detail: PlaylistDetail,
     name?: string,
   ): Promise<AccountPushResult> {
+    if (await this.official?.ownsSession(userId)) return this.official!.push(userId, detail, name);
     const session = await this.readSession(userId);
     const targetIds = uniqueNumericIds(
       detail.items.map((item) => {
@@ -329,6 +337,14 @@ export class NeteaseAccountService {
       skipped: detail.items.length - targetIds.length,
       failed,
     };
+  }
+
+  async fetchPlaylist(userId: string, ref: ParsedRef, adapter: PlatformAdapter): Promise<RemotePlaylist> {
+    if (await this.official?.ownsSession(userId)) {
+      return this.official!.fetchPlaylist(userId, ref, () => adapter.fetchPlaylist(ref));
+    }
+    const cookie = await this.cookieFor(userId);
+    return adapter.fetchPlaylist(ref, cookie ? { cookie } : undefined);
   }
 
   private async requireProfile(

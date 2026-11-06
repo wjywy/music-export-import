@@ -52,6 +52,12 @@ WEB_PORT=8090
 WEB_BIND=127.0.0.1
 NPM_REGISTRY=https://registry.npmmirror.com
 
+# 网易云官方扫码及歌单写入：在网易云开放平台申请应用后填写
+NETEASE_OPENAPI_APP_ID=
+NETEASE_OPENAPI_APP_KEY=
+# 单行 PKCS#8 Base64 私钥，或用 \n 分隔的 RSA PEM
+NETEASE_OPENAPI_PRIVATE_KEY=
+
 # Apple Music 站内直写（可选）：自动签发开发者 token（推荐）
 # 不配置 APPLE_MUSIC_* 时，前端使用 Soundiiz 免费导入
 APPLE_MUSIC_STOREFRONT=cn
@@ -61,6 +67,8 @@ APPLE_MUSIC_KEY_ID=
 APPLE_MUSIC_PRIVATE_KEY=
 # 也可以改为手工 JWT：APPLE_MUSIC_TOKEN=
 ```
+
+`NETEASE_OPENAPI_*` 只配置在服务器端；配置后新生成的网易云二维码走官方接口，有效期为 5 分钟。已有 Cookie 登录可以继续使用，断开后重新扫码会切换到官方授权。未配置开放平台时继续使用官网浏览器扫码。真实应用凭证和用户授权令牌不要提交到仓库。
 
 Apple Music 的 `APPLE_MUSIC_*` 变量会传给 API 容器；`APPLE_MUSIC_PRIVATE_KEY` 里的 `$` 等字符不要做 shell 展开。配置后用 `GET /api/platforms/apple/config` 确认 `configured: true`。
 

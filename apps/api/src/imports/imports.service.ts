@@ -100,11 +100,10 @@ export class ImportsService {
         progress: 10,
         message: `正在读取${PLATFORM_META[ref.platform].name}歌单…`,
       });
-      const cookie =
-        ref.platform === 'netease' ? await this.netease.cookieFor(userId) : null;
-      const remote = await this.registry
-        .get(ref.platform)
-        .fetchPlaylist(ref, cookie ? { cookie } : undefined);
+      const adapter = this.registry.get(ref.platform);
+      const remote = ref.platform === 'netease'
+        ? await this.netease.fetchPlaylist(userId, ref, adapter)
+        : await adapter.fetchPlaylist(ref);
       const deduped = dedupeTracks(remote.tracks);
       remote.tracks = deduped.tracks;
       const total = remote.tracks.length;
@@ -183,11 +182,10 @@ export class ImportsService {
           message: `正在读取第 ${index + 1} / ${refs.length} 张歌单…`,
         });
         try {
-          const cookie =
-            ref.platform === 'netease' ? await this.netease.cookieFor(userId) : null;
-          const remote = await this.registry
-            .get(ref.platform)
-            .fetchPlaylist(ref, cookie ? { cookie } : undefined);
+          const adapter = this.registry.get(ref.platform);
+          const remote = ref.platform === 'netease'
+            ? await this.netease.fetchPlaylist(userId, ref, adapter)
+            : await adapter.fetchPlaylist(ref);
           remotes.push({ remote, ref });
         } catch (error) {
           failures.push(`${PLATFORM_META[ref.platform].name}：${describeError(error)}`);
