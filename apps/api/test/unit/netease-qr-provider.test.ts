@@ -18,7 +18,7 @@ function deferred<T>() {
 function fixture(t: TestContext, provider?: string) {
   const config = new ConfigService({ NETEASE_OPENAPI_APP_ID: 'personal-app',
     NETEASE_OPENAPI_APP_KEY: 'private-app-key', NETEASE_OPENAPI_PRIVATE_KEY: 'private-signing-key',
-    CREDENTIALS_SECRET: 'test-only-secret', ...(provider ? { NETEASE_QR_PROVIDER: provider } : {}) });
+    CREDENTIALS_SECRET: 'test-only-secret', NETEASE_QR_PROVIDER: provider ?? 'browser' });
   const cipher = new CredentialCipher(config);
   const rows = new Map<string, PlatformCredential>();
   const repository = {
@@ -47,7 +47,7 @@ function fixture(t: TestContext, provider?: string) {
     opening(value: typeof opening) { opening = value; } };
 }
 
-test('configured personal credentials still default to isolated website QR sessions for different users', async (t) => {
+test('explicit browser mode retains isolated website QR sessions for different users', async (t) => {
   const f = fixture(t);
   assert.equal((await f.service.status('alice')).connected, false);
   const [alice, bob] = await Promise.all([f.service.startQr('alice'), f.service.startQr('bob')]);
@@ -164,4 +164,20 @@ test('disconnect also releases a website context that finishes opening late', as
   await rejected; await disconnect;
   assert.equal(f.closed.length, 1);
   assert.equal(f.rows.size, 0);
+});
+
+test('default PC mode delegates to the isolated backend without opening Chromium or OpenAPI', async (t) => {
+  const f = fixture(t, 'pc');
+  const qr = { platform: 'netease' as const, key: 'pc-code', image: 'image', expiresAt: new Date(Date.now() + 180000) };
+  let starts = 0, checks = 0, closes = 0;
+  const pc = { startQr: async () => { starts++; return qr; }, checkQr: async () => { checks++; return { status: 'waiting' }; }, disconnect: async () => { closes++; } };
+  const service = new NeteaseAccountService(f.repository as never, f.cipher, f.pool, f.official, pc as never);
+  assert.equal(new NeteaseOpenApiClient(new ConfigService({})).qrProvider, 'pc');
+  await service.status('alice');
+  assert.equal(await service.startQr('alice'), qr);
+  assert.equal((await service.checkQr('alice', qr.key)).status, 'waiting');
+  await service.disconnect('alice');
+  assert.deepEqual([starts, checks, closes], [1, 1, 1]);
+  assert.equal(f.opened.length, 0);
+  assert.equal(f.fetch.mock.callCount(), 0);
 });

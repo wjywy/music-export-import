@@ -15,18 +15,30 @@ import { respondToPush } from '../common/push-progress';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { NeteaseOpenApiAccountService } from './netease-openapi-account.service';
 import { AccountsService } from './accounts.service';
-import { ConnectCookieDto, PushPlaylistDto } from './accounts.dto';
+import { CompleteNeteaseOAuthDto, StartNeteaseOAuthDto, ConnectCookieDto, PushPlaylistDto } from './accounts.dto';
 import { isAccountPlatform } from './account.types';
 
 @Controller('accounts')
 @UseGuards(JwtAuthGuard)
 export class AccountsController {
-  constructor(private readonly accounts: AccountsService) {}
+  constructor(private readonly accounts: AccountsService,
+    private readonly netease: NeteaseOpenApiAccountService) {}
 
   @Get()
   status(@CurrentUser() user: AuthUser) {
     return this.accounts.status(user.sub);
+  }
+
+  @Post('netease/oauth/start')
+  startOAuth(@CurrentUser() user: AuthUser, @Body() dto: StartNeteaseOAuthDto) {
+    return this.netease.startOAuth(user.sub, dto.returnTo);
+  }
+
+  @Post('netease/oauth/complete')
+  completeOAuth(@CurrentUser() user: AuthUser, @Body() dto: CompleteNeteaseOAuthDto) {
+    return this.netease.completeOAuth(user.sub, dto.state, dto.code);
   }
 
   @Post(':platform/qr')

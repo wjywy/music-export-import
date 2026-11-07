@@ -12,6 +12,7 @@ import type { PlaylistDetail } from '../../src/playlists/playlists.service';
 const privateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey
   .export({ format: 'der', type: 'pkcs8' }).toString('base64');
 const config = new ConfigService({ NETEASE_QR_PROVIDER: 'openapi', NETEASE_OPENAPI_APP_ID: 'unit-app',
+  NETEASE_OPENAPI_REDIRECT_URL: 'https://example.com/tool/music/app/netease-callback',
   NETEASE_OPENAPI_PRIVATE_KEY: privateKey, NETEASE_OPENAPI_APP_KEY: 'unit-key', CREDENTIALS_SECRET: 'unit-cipher' });
 const playlistId = 'b'.repeat(32), songId = 'a'.repeat(32);
 const ref = { platform: 'netease' as const, kind: 'playlist' as const, id: '101', url: 'https://music.163.com/playlist?id=101' };
@@ -36,6 +37,7 @@ function fixture(t: TestContext) {
       case API.poll: return { status: state, accessToken: {
         accessToken: qrCount === 1 ? 'access' : `access-${qrCount}`,
         refreshToken: qrCount === 1 ? 'refresh' : `refresh-${qrCount}`, expireTime: 3600 } };
+      case API.exchange: return { accessToken: 'h5-access', refreshToken: 'h5-refresh', expireIn: '604800' };
       case API.profile: return { id: accountId, nickname: 'unit' };
       case API.refresh: return { accessToken: 'renewed-access', refreshToken: 'renewed-refresh', expiresTime: 3600 };
       case API.created: return { records: [{ originalId: 101, id: playlistId, name: 'private', trackCount: 1 }], recordCount: 1 };
@@ -429,10 +431,74 @@ test('profile permission denial is distinguished from QR expiry without polling 
   for (let attempt = 0; attempt < 2; attempt++) {
     await assert.rejects(() => f.service.checkQr('owner', qr.key), (error: unknown) => {
       const body = (error as { getResponse(): { code: string; message: string } }).getResponse();
-      return body.code === 'NETEASE_PROFILE_FORBIDDEN' && body.message.includes('扫码授权已成功');
+      return body.code === 'NETEASE_PROFILE_FORBIDDEN' && body.message.includes('授权已成功');
     });
     f.state(800);
   }
   assert.equal(f.calls.filter((call) => call.path === API.poll).length, 1);
   assert.equal(f.rows.size, 0);
+});
+
+test('H5 callback binds a single-use state to its owner and persists encrypted tokens', async (t) => {
+  const f = fixture(t);
+  const returnTo = '/app/playlists/12345678-1234-1234-1234-123456789abc';
+  const next = f.service.startOAuth('owner', returnTo);
+  const url = new URL(next.url);
+  const state = url.searchParams.get('state')!;
+  assert.match(state, /^[a-zA-Z0-9]{30}$/);
+  assert.equal(url.searchParams.get('redirectUrl'), 'https://example.com/tool/music/app/netease-callback');
+  await assert.rejects(() => f.service.completeOAuth('other', state, 'temporary-code'), /不属于/);
+  const result = await f.service.completeOAuth('owner', state, 'temporary-code');
+  assert.deepEqual(result, { status: 'authorized', nickname: 'unit', returnTo });
+  assert.equal(f.read().accessToken, 'h5-access');
+  assert.ok(!f.rows.get('owner')!.encryptedToken.includes('h5-access'));
+  const exchange = f.calls.find((call) => call.path === API.exchange)!;
+  assert.deepEqual(exchange.business, { grantCode: 'temporary-code' });
+  assert.equal(exchange.token, undefined);
+  await assert.rejects(() => f.service.completeOAuth('owner', state, 'temporary-code'), /过期/);
+  assert.equal(f.calls.filter((call) => call.path === API.exchange).length, 1);
+});
+
+test('H5 states expire, are replaced per owner, and are cancelled on disconnect', async (t) => {
+  const f = fixture(t);
+  assert.throws(() => f.service.startOAuth('owner', '//evil.example'), /无效/);
+  const first = new URL(f.service.startOAuth('owner').url).searchParams.get('state')!;
+  const second = new URL(f.service.startOAuth('owner').url).searchParams.get('state')!;
+  await assert.rejects(() => f.service.completeOAuth('owner', first, 'code'), /过期/);
+  const now = Date.now();
+  const clock = t.mock.method(Date, 'now', () => now + 600001);
+  await assert.rejects(() => f.service.completeOAuth('owner', second, 'code'), /过期/);
+  clock.mock.restore();
+  const third = new URL(f.service.startOAuth('owner').url).searchParams.get('state')!;
+  await f.service.disconnect('owner');
+  await assert.rejects(() => f.service.completeOAuth('owner', third, 'code'), /过期/);
+  assert.equal(f.calls.length, 0);
+});
+
+test('H5 callback cannot be replayed while token exchange is in flight or after a failure', async (t) => {
+  const f = fixture(t);
+  const state = new URL(f.service.startOAuth('owner').url).searchParams.get('state')!;
+  const exchange = deferred<unknown>();
+  f.reply((path) => path === API.exchange ? exchange.promise : f.defaultReply(path));
+  const completion = f.service.completeOAuth('owner', state, 'code');
+  await assert.rejects(() => f.service.completeOAuth('owner', state, 'code'), /过期/);
+  exchange.resolve({ code: 400 });
+  await assert.rejects(() => completion, /授权码无效/);
+  assert.equal(f.rows.size, 0);
+  assert.equal(f.calls.filter((call) => call.path === API.exchange).length, 1);
+});
+
+test('disconnect during H5 exchange prevents a late callback from reconnecting', async (t) => {
+  const f = fixture(t);
+  const state = new URL(f.service.startOAuth('owner').url).searchParams.get('state')!;
+  const exchange = deferred<unknown>();
+  f.reply((path) => path === API.exchange ? exchange.promise : f.defaultReply(path));
+  const completion = f.service.completeOAuth('owner', state, 'code');
+  const rejected = assert.rejects(() => completion, /关闭/);
+  const disconnect = f.service.disconnect('owner');
+  exchange.resolve(f.defaultReply(API.exchange));
+  await rejected;
+  await disconnect;
+  assert.equal(f.rows.size, 0);
+  assert.equal(f.calls.filter((call) => call.path === API.profile).length, 0);
 });

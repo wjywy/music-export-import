@@ -3059,3 +3059,25 @@ img {
     padding: 18px 0;
   }
 }
+
+
+.netease-qr-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.netease-qr-image ol {
+  list-style: decimal;
+  margin: 0;
+  padding-left: 20px;
+  text-align: left;
+}
+.netease-qr-image li + li { margin-top: 6px; }
+.netease-qr-image summary {
+  cursor: pointer;
+  color: var(--navy);
+  font-size: 13px;
+  padding: 6px 0;
+}

@@ -36,6 +36,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       response.status(status).json({
         statusCode: status,
         message,
+        ...(typeof payload === 'object' && typeof (payload as { code?: unknown }).code === 'string'
+          ? { code: (payload as { code: string }).code } : {}),
         ...(Array.isArray(raw) ? { details: raw } : {}),
       });
       return;

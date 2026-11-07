@@ -19,6 +19,7 @@ import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
 import { PlaylistDetail } from './pages/PlaylistDetail';
+import { NeteaseCallback } from './pages/NeteaseCallback';
 import { Register } from './pages/Register';
 
 const queryClient = new QueryClient({
@@ -103,6 +104,7 @@ export default function App() {
                     </Protected>
                   }
                 />
+                <Route path="app/netease-callback" element={<Protected><NeteaseCallback /></Protected>} />
                 <Route
                   path="app/import"
                   element={

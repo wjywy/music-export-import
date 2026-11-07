@@ -129,3 +129,25 @@ test('QR refresh reuses an anonymous token and a stable alphanumeric device per 
   const long = 'a+/='.repeat(150);
   assert.equal(client.token({ accessToken: long, refreshToken: long, expireTime: 604800 }).accessToken, long);
 });
+
+test('H5 authorization uses only public parameters and a registered HTTPS redirect', async () => {
+  const client = new NeteaseOpenApiClient(new ConfigService({ ...settings,
+    NETEASE_OPENAPI_REDIRECT_URL: 'https://example.com/tool/music/app/netease-callback',
+    NETEASE_OPENAPI_CLIENT_TYPE: 'web' }));
+  const next = client.h5Authorization('a'.repeat(30), 'owner');
+  const url = new URL(next.url);
+  assert.equal(url.origin, 'https://music.163.com');
+  assert.equal(url.pathname, '/st/platform/oauth/authorize');
+  assert.deepEqual(Object.fromEntries(url.searchParams), {
+    clientId: settings.NETEASE_OPENAPI_APP_ID, state: 'a'.repeat(30), clientType: 'web',
+    redirectUrl: 'https://example.com/tool/music/app/netease-callback',
+  });
+  assert.equal(next.context.accessToken, '');
+  assert.ok(!next.url.includes(settings.NETEASE_OPENAPI_APP_KEY));
+  const missing = new NeteaseOpenApiClient(new ConfigService(settings));
+  assert.throws(() => missing.h5Authorization('state', 'owner'), /REDIRECT_URL/);
+  for (const redirect of ['http://example.com/callback', 'https://localhost/callback', 'https://example.com/?code=1']) {
+    const invalid = new NeteaseOpenApiClient(new ConfigService({ ...settings, NETEASE_OPENAPI_REDIRECT_URL: redirect }));
+    assert.throws(() => invalid.h5Authorization('state', 'owner'), /公网 HTTPS/);
+  }
+});

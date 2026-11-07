@@ -12,6 +12,7 @@ export interface AccountStatus {
   connected: boolean;
   nickname: string | null;
   connectedAt: Date | null;
+  h5Available?: boolean;
 }
 
 export interface AccountQr {

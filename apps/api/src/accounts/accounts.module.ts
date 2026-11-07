@@ -10,6 +10,8 @@ import { AccountsService } from './accounts.service';
 import { NeteaseAccountService } from './netease-account.service';
 import { QqAccountService } from './qq-account.service';
 import { NeteaseQrPool } from './netease-qr-pool';
+import { NeteasePcQrClient } from './netease-pc-qr.client';
+import { NeteasePcQrService } from './netease-pc-qr.service';
 import { NeteaseOpenApiClient } from './netease-openapi.client';
 import { NeteaseOpenApiAccountService } from './netease-openapi-account.service';
 
@@ -26,6 +28,8 @@ import { NeteaseOpenApiAccountService } from './netease-openapi-account.service'
     NeteaseAccountService,
     QqAccountService,
     CredentialCipher,
+    NeteasePcQrClient,
+    NeteasePcQrService,
     NeteaseOpenApiClient,
     NeteaseOpenApiAccountService,
     { provide: NeteaseQrPool, useFactory: () => new NeteaseQrPool() },

@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Upload } from '../components/Icons';
+import { NeteaseQrImage } from '../components/NeteaseQrImage';
 import { Loading } from '../components/Loading';
 import { Seo } from '../components/Seo';
 import { useToast } from '../context/ToastContext';
-import { ACCOUNT_QR_TIMEOUT_SECONDS, api } from '../lib/api';
+import { ACCOUNT_QR_TIMEOUT_SECONDS, ApiError, api } from '../lib/api';
 import { detectPlatform, PLATFORM_INFO } from '../lib/platforms';
 import { ROBOTS_NOINDEX } from '../lib/seo';
 import type { AccountQr, AccountQrStatus, ImportJob, Platform } from '../lib/types';
@@ -90,13 +91,19 @@ export function ImportPage() {
   useEffect(() => {
     if (!connectOpen || !qr) return;
     let cancelled = false;
+    let checking = false;
+    let finished = false;
     let timer: number | undefined;
-
     const tick = async () => {
+      if (cancelled || checking || finished) return;
+      checking = true;
+      window.clearTimeout(timer);
       try {
         const status = await api.checkAccountQr('netease', qr.key);
         if (cancelled) return;
+        setConnectError(null);
         if (status.status === 'authorized') {
+          finished = true;
           setQr(null);
           setQrState('authorized');
           setConnectOpen(false);
@@ -106,23 +113,41 @@ export function ImportPage() {
           return;
         }
         if (status.status === 'expired') {
+          finished = true;
           setQrState('expired');
           setConnectError(status.message ?? '二维码已过期。');
           return;
         }
         setQrState(status.status);
-        timer = window.setTimeout(tick, 2000);
+        timer = window.setTimeout(tick, 3000);
       } catch (error) {
         if (cancelled) return;
-        setQrState('expired');
-        setConnectError(error instanceof Error ? error.message : '检查扫码状态失败。');
-      }
+        if (error instanceof ApiError && ['NETEASE_PROFILE_FORBIDDEN', 'NETEASE_QR_REJECTED'].includes(error.code ?? '')) {
+          finished = true;
+          setQr(null);
+          setQrState('idle');
+          setConnectError(error.message);
+          return;
+        }
+        if (Date.now() >= new Date(qr.expiresAt).getTime()) {
+          finished = true;
+          setQrState('expired');
+          setConnectError('二维码已过期，请重新生成。');
+          return;
+        }
+        setConnectError('检查登录状态暂时失败，正在重试…');
+        timer = window.setTimeout(tick, 3000);
+      } finally { checking = false; }
     };
-
-    timer = window.setTimeout(tick, 1500);
+    const onReturn = () => { if (document.visibilityState === 'visible') void tick(); };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('pageshow', onReturn);
+    void tick();
     return () => {
       cancelled = true;
-      if (timer) window.clearTimeout(timer);
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('pageshow', onReturn);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectOpen, qr, url, queryClient]);
@@ -279,7 +304,7 @@ export function ImportPage() {
             </div>
           ) : qr ? (
             <div className="account-qr">
-              <img src={qr.image} alt="网易云登录二维码" />
+              <NeteaseQrImage image={qr.image} alt="网易云登录二维码" expired={qrState === 'expired'} />
               <p>
                 {qrState === 'scanned'
                   ? '已扫码，请在手机上确认。'

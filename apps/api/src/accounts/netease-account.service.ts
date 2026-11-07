@@ -29,6 +29,7 @@ import {
 } from './account.utils';
 import { refreshQrSession, type BrowserQrSession } from './netease-qr-browser';
 import { NeteaseQrPool } from './netease-qr-pool';
+import { NeteasePcQrService } from './netease-pc-qr.service';
 import { NeteaseOpenApiAccountService } from './netease-openapi-account.service';
 import type { ParsedRef, PlatformAdapter, RemotePlaylist } from '../platforms/adapter.interface';
 
@@ -84,7 +85,12 @@ export class NeteaseAccountService {
     private readonly cipher: CredentialCipher,
     private readonly qrPool: NeteaseQrPool,
     private readonly official?: NeteaseOpenApiAccountService,
+    private readonly pcQr?: NeteasePcQrService,
   ) {}
+
+  private get usesPcQr(): boolean {
+    return this.official?.qrProvider === 'pc' && Boolean(this.pcQr);
+  }
 
   async cookieFor(userId: string): Promise<string | null> {
     try {
@@ -97,7 +103,7 @@ export class NeteaseAccountService {
   async status(userId: string): Promise<AccountStatus> {
     if (this.official?.enabled) {
       const status = await this.official.status(userId);
-      if (!status.connected && !this.official.qrEnabled && !this.disconnecting.has(userId)) {
+      if (!status.connected && !this.official.qrEnabled && !this.usesPcQr && !this.disconnecting.has(userId)) {
         this.qrPool.prepare();
       }
       return status;
@@ -106,7 +112,7 @@ export class NeteaseAccountService {
       where: { userId, platform: 'netease' },
     });
     if (!row) {
-      this.qrPool.prepare();
+      if (!this.usesPcQr) this.qrPool.prepare();
       return {
         platform: 'netease',
         connected: false,
@@ -134,6 +140,7 @@ export class NeteaseAccountService {
 
   async startQr(userId: string): Promise<AccountQr> {
     this.assertConnectedOperationsAllowed(userId);
+    if (this.usesPcQr) return this.pcQr!.startQr(userId);
     if (this.official?.qrEnabled) return this.official.startQr(userId);
     const existing = this.browserStarts.get(userId);
     if (existing) return existing;
@@ -144,6 +151,7 @@ export class NeteaseAccountService {
 
   async checkQr(userId: string, key: string): Promise<AccountQrStatus> {
     if (this.disconnecting.has(userId)) return { status: 'expired' };
+    if (this.usesPcQr) return this.pcQr!.checkQr(userId, key);
     if (this.official?.qrEnabled) return this.official.checkQr(userId, key);
     const browser = this.browserSessions.get(key);
     if (browser?.userId === userId) {
@@ -245,6 +253,7 @@ export class NeteaseAccountService {
       await Promise.all([...closing, ...[...this.browserCompletions.values()]
         .filter((entry) => entry.userId === userId)
         .map((entry) => entry.completion.catch(() => undefined))]);
+      await this.pcQr?.disconnect(userId);
       // The saved credential may predate a change of QR provider.
       if (this.official) return this.official.disconnect(userId);
       await this.credentials.delete({ userId, platform: 'netease' });

@@ -290,3 +290,35 @@ test('QR profile permission failure shows the actual error and stops polling', a
   await page.clock.fastForward(10000);
   expect(checks).toBe(1);
 });
+
+test('phone QR offers saving and checks immediately on return without overlapping polls', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const qrImage = await require('../../apps/api/node_modules/qrcode').toDataURL('https://music.163.com/login?codekey=phone-login');
+  let checks = 0, release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/accounts/netease/qr', route => route.fulfill({ json: {
+    platform: 'netease', key: 'phone-login', expiresAt: new Date(Date.now() + 180000).toISOString(),
+    image: qrImage,
+  } }));
+  await page.route('**/api/accounts/netease/qr/phone-login', async route => {
+    checks++;
+    if (checks === 1) await waiting;
+    await route.fulfill({ json: { status: 'waiting' } });
+  });
+  const dialog = await openMigration(page, 'http://127.0.0.1/unused', false, () => false);
+  await dialog.getByRole('button', { name: '扫码连接 网易云音乐' }).click();
+  await expect(dialog.getByRole('link', { name: '保存二维码' })).toHaveAttribute('download', 'dukou-netease-qr.png');
+  await dialog.getByRole('button', { name: '用这台手机扫码' }).click();
+  await expect(dialog.getByText('打开网易云音乐的扫一扫，从相册选择这张二维码并确认登录。')).toBeVisible();
+  await expect.poll(() => checks).toBe(1);
+  await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('pageshow')); });
+  expect(checks).toBe(1);
+  release();
+  await expect(dialog.getByText(/检查登录状态暂时失败/)).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/dukou-pc-qr-mobile.png', fullPage: true });
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect.poll(() => checks).toBe(2);
+  await dialog.getByRole('button', { name: '关闭' }).click();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  expect(checks).toBe(2);
+});

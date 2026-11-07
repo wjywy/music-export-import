@@ -52,8 +52,8 @@ WEB_PORT=8090
 WEB_BIND=127.0.0.1
 NPM_REGISTRY=https://registry.npmmirror.com
 
-# 多人扫码默认走官网浏览器，不需要申请 AppID
-NETEASE_QR_PROVIDER=browser
+# 默认 PC 扫码：传统二维码和独立后端会话，不需要申请 AppID
+NETEASE_QR_PROVIDER=pc
 # 个人 CLI 授权可选；需显式改为 openapi，并确认应用授权范围
 NETEASE_OPENAPI_APP_ID=
 NETEASE_OPENAPI_APP_KEY=
@@ -70,9 +70,11 @@ APPLE_MUSIC_PRIVATE_KEY=
 # 也可以改为手工 JWT：APPLE_MUSIC_TOKEN=
 ```
 
-多人使用的部署应保持 `NETEASE_QR_PROVIDER=browser`。用户在网易云 App 中扫描官网二维码并确认，渡口自动保存该用户的加密会话，无需手工复制 Cookie。二维码从生成起最多保留 2 分钟；官网可能提前使其失效。镜像已安装 Chromium，`CHROME_PATH` 可保持默认值。配置了 `NETEASE_OPENAPI_*` 也不会改变新二维码的来源。
+默认使用 `NETEASE_QR_PROVIDER=pc`。渡口生成传统 `/login?codekey=` 二维码，由后端每 3 秒至多查询一次，复用该用户独立的设备与 Cookie 会话；收到扫码确认及登录 Cookie 后加密保存。手机用户可长按保存或截图，在网易云扫一扫中从相册识别，确认后回到渡口自动检查。二维码在渡口最多展示 3 分钟，网易云可能提前使其失效。这一可见流程参考 Soundiiz，不代表已知其私有后端实现，也不保证所有账号都能通过平台风控。
 
-官方 API 扫码需显式设置 `NETEASE_QR_PROVIDER=openapi`，使用 `https://openapi.music.163.com`，二维码最多保留 5 分钟。取码与轮询复用同一设备的匿名令牌，每 2 秒轮询一次；扫码成功后停止轮询，再读取账号资料。若资料接口返回 `301`，页面会说明账号资料授权受限，不会把它显示为二维码过期。个人应用的账号及接口授权范围有限，不能假定创建者申请一次 AppID 就允许任意用户扫码接入。`NETEASE_OPENAPI_*` 只在服务器配置。切换二维码模式不删除已有账号凭据，后续读写继续使用该账号原先保存的会话；断开后重新扫码才会使用新模式。真实应用凭证和用户授权令牌不要提交到仓库。
+备用官网浏览器模式可设置 `NETEASE_QR_PROVIDER=browser`，需可运行的 Chromium，二维码最多保留 2 分钟。镜像已安装 Chromium，`CHROME_PATH` 可保持默认值。配置 `NETEASE_OPENAPI_*` 不会自动切换新二维码来源。
+
+官方 API 扫码需显式设置 `NETEASE_QR_PROVIDER=openapi`，使用 `https://openapi.music.163.com`，二维码最多保留 5 分钟。取码与轮询复用同一设备的匿名令牌，每 3 秒轮询一次；扫码成功后停止轮询，再读取账号资料。若资料接口返回 `301`，页面会说明账号资料授权受限，不会把它显示为二维码过期。个人应用的账号及接口授权范围有限，不能假定创建者申请一次 AppID 就允许任意用户扫码接入。`NETEASE_OPENAPI_*` 只在服务器配置。切换二维码模式不删除已有账号凭据，后续读写继续使用该账号原先保存的会话；断开后重新扫码才会使用新模式。真实应用凭证和用户授权令牌不要提交到仓库。
 
 Apple Music 的 `APPLE_MUSIC_*` 变量会传给 API 容器；`APPLE_MUSIC_PRIVATE_KEY` 里的 `$` 等字符不要做 shell 展开。配置后用 `GET /api/platforms/apple/config` 确认 `configured: true`。
 
@@ -201,7 +203,7 @@ bash scripts/deploy-prod.sh
 
 这次的实时进度需要同时更新 API 和 web。API 通过已认证的 POST 请求返回 `text/event-stream`；浏览器请求 JSON 时保留原来的返回格式。容器 nginx 会转发 `X-Accel-Buffering: no`，当前 Caddy 可直接转发进度。若使用其他 nginx 反代，按上面的配置关闭响应缓冲。
 
-多人官网扫码只需 `NETEASE_QR_PROVIDER=browser` 和可运行的 Chromium。只有显式选择个人 CLI 模式才需要服务器 `.env.production` 中的 `NETEASE_OPENAPI_*`。本地授权保存在本地数据库，服务器部署后需在服务器页面扫码连接一次。不要用本地 `.env` 覆盖服务器的数据库密码或加密密钥。
+默认 PC 扫码只需 `NETEASE_QR_PROVIDER=pc`，不需要 Chromium 或开放平台凭证；`browser` 是需要 Chromium 的备用模式。只有显式选择 `openapi` 或 H5 授权才需要服务器 `.env.production` 中的 `NETEASE_OPENAPI_*`。本地授权保存在本地数据库，服务器部署后需在服务器页面扫码连接一次。不要用本地 `.env` 覆盖服务器的数据库密码或加密密钥。
 
 ## 六、备份
 
@@ -250,3 +252,19 @@ GitHub Secrets：
 **Docker Hub 拉不动**
 
 配置镜像加速，或把 `MYSQL_IMAGE` 换成可达镜像。`node:22-alpine`、`nginx:1.27-alpine` 也需要能拉取。
+
+
+### 网易云 H5 授权（手机可用）
+
+迁移弹窗中的“前往网易云授权”在当前浏览器打开网易云官方授权页；完成后回到渡口，由后端使用临时 code 换取令牌并加密保存。用户返回歌单后手动继续迁移。无需浏览器扩展或复制 Cookie。
+
+服务器 `.env.production` 除原有 `NETEASE_OPENAPI_*` 凭证外，增加：
+
+```dotenv
+NETEASE_OPENAPI_REDIRECT_URL=https://a2a-platform.com/tool/music/app/netease-callback
+NETEASE_OPENAPI_CLIENT_TYPE=web
+```
+
+在网易云控制台登记同一个公网 HTTPS 授权回调地址；`clientType` 必须与应用创建时的类型一致，`web` 仅为配置示例。不能直接用 localhost 回调。授权须在发起连接的同一浏览器中完成，回调还要求登录原渡口账号。授权请求 10 分钟有效且只能使用一次；API 重启后需重新发起。
+
+H5 登录独立于 `NETEASE_QR_PROVIDER`。页面显示“获取应用信息失败”时，需要网易云确认 AppID 的 H5 接入资格和端类型；换码接口返回 `300` 或资料接口返回 `301` 时，会显示权限问题。接入代码不会自动开通应用权限。

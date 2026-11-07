@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight } from './Icons';
+import { NeteaseQrImage } from './NeteaseQrImage';
 import { Dialog } from './Dialog';
 import { Loading } from './Loading';
 import { PushProgress } from './PushProgress';
@@ -111,6 +112,7 @@ export function TransferDialog({
   const [qr, setQr] = useState<AccountQr | null>(null);
   const [qrState, setQrState] = useState<AccountQrStatus['status'] | 'idle' | 'generating'>('idle');
   const qrRequest = useRef(0);
+  const [oauthBusy, setOAuthBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [cookieOpen, setCookieOpen] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
@@ -190,6 +192,28 @@ export function TransferDialog({
   const account = isApple
     ? undefined
     : accounts.data?.accounts.find((entry) => entry.platform === target);
+
+  useEffect(() => {
+    const restored = () => setOAuthBusy(false);
+    window.addEventListener('pageshow', restored);
+    return () => window.removeEventListener('pageshow', restored);
+  }, []);
+
+  async function connectWithOAuth() {
+    setOAuthBusy(true);
+    setAccountError(null);
+    try {
+      const next = await api.startNeteaseOAuth(`/app/playlists/${playlistId}`);
+      const url = new URL(next.url);
+      if (url.origin !== 'https://music.163.com' || url.pathname !== '/st/platform/oauth/authorize') {
+        throw new Error('网易云授权地址无效，请稍后重试。');
+      }
+      window.location.assign(url.href);
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : '无法打开网易云授权，请稍后重试。');
+      setOAuthBusy(false);
+    }
+  }
 
   async function connect() {
     if (isApple || qrState === 'generating') return;
@@ -371,13 +395,19 @@ export function TransferDialog({
     if (!open || !qr || isApple) return;
     let cancelled = false;
     let timer: number | undefined;
+    let checking = false;
+    let finished = false;
 
     const tick = async () => {
+      if (checking || cancelled || finished) return;
+      checking = true;
+      window.clearTimeout(timer);
       try {
         const status = await api.checkAccountQr(target, qr.key);
         if (cancelled) return;
         setAccountError(null);
         if (status.status === 'authorized') {
+          finished = true;
           setQr(null);
           setQrState('authorized');
           await queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -385,21 +415,24 @@ export function TransferDialog({
           return;
         }
         if (status.status === 'expired') {
+          finished = true;
           setQrState('expired');
           setAccountError(status.message ?? '二维码已过期。');
           return;
         }
         setQrState(status.status);
-        timer = window.setTimeout(tick, 2000);
+        timer = window.setTimeout(tick, 3000);
       } catch (error) {
         if (cancelled) return;
-        if (error instanceof ApiError && error.code === 'NETEASE_PROFILE_FORBIDDEN') {
+        if (error instanceof ApiError && ['NETEASE_PROFILE_FORBIDDEN', 'NETEASE_QR_REJECTED'].includes(error.code ?? '')) {
+          finished = true;
           setQr(null);
           setQrState('idle');
           setAccountError(error.message);
           return;
         }
         if (Date.now() >= new Date(qr.expiresAt).getTime()) {
+          finished = true;
           setQrState('expired');
           setAccountError('二维码已过期，请重新生成。');
           return;
@@ -407,14 +440,21 @@ export function TransferDialog({
         setAccountError(
           '检查登录状态暂时失败，正在重试…',
         );
-        timer = window.setTimeout(tick, 2000);
+        timer = window.setTimeout(tick, 3000);
+      } finally {
+        checking = false;
       }
     };
 
+    const onReturn = () => { if (document.visibilityState === 'visible') void tick(); };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('pageshow', onReturn);
     void tick();
     return () => {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('pageshow', onReturn);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, qr, target, isApple]);
@@ -773,13 +813,17 @@ export function TransferDialog({
               ) : (
                 <>
                   <p className="field-hint">
-                    扫码一次，之后渡口直接建歌单；登录态 AES-256-GCM 加密保存，可随时断开。
+                    {target === 'netease' ? '用网易云音乐扫一扫连接；同一手机可保存二维码后从相册识别。授权信息加密保存，可随时断开。' : '扫码一次，之后渡口直接建歌单；登录态加密保存，可随时断开。'}
                   </p>
                   <div className="panel-actions">
+                    {target === 'netease' && account?.h5Available ? <button type="button" className="btn btn-quiet btn-sm"
+                      disabled={oauthBusy || pushing} onClick={() => void connectWithOAuth()}>
+                      {oauthBusy ? '正在前往网易云…' : '前往网易云授权'}
+                    </button> : null}
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      disabled={Boolean(qr) || qrState === 'generating' || pushing}
+                      disabled={oauthBusy || Boolean(qr) || qrState === 'generating' || pushing}
                       onClick={() => void connect()}
                     >
                       {qr ? '等待扫码…' : `扫码连接 ${targetName}`}
@@ -806,7 +850,9 @@ export function TransferDialog({
                 </div>
               ) : qr ? (
                 <div className="account-qr">
-                  <img src={qr.image} alt={`${targetName} 登录二维码`} />
+                  {target === 'netease'
+                    ? <NeteaseQrImage image={qr.image} alt={`${targetName} 登录二维码`} expired={qrState === 'expired'} />
+                    : <img src={qr.image} alt={`${targetName} 登录二维码`} />}
                   <p>
                     {qrState === 'scanned'
                       ? '已扫码，请在手机上确认。'
@@ -817,8 +863,8 @@ export function TransferDialog({
                   {qrState === 'expired' ? (
                     <>
                       <p>
-                        如果手机上提示「设备环境异常」，那是网易云的风控拦截，
-                        扫码会一直被拦，可以改用 Cookie 登录。
+                        请查看手机上的具体提示。若显示「设备环境异常」，可稍后重试，
+                        或使用已登录的 Cookie 连接。
                       </p>
                       <div className="panel-actions">
                         <button

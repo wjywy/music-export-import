@@ -8,6 +8,7 @@ export const NETEASE_OPENAPI = {
   anonymous: '/openapi/music/basic/oauth2/login/anonymous',
   qr: '/openapi/music/basic/user/oauth2/qrcodekey/get/v2',
   poll: '/openapi/music/basic/oauth2/device/login/qrcode/get',
+  exchange: '/openapi/music/basic/user/oauth2/token/get/v2',
   profile: '/openapi/music/basic/user/profile/get/v2',
   refresh: '/openapi/music/basic/user/oauth2/token/refresh/v2',
   searchSongs: '/openapi/music/basic/search/song/get/v3',
@@ -59,7 +60,7 @@ interface TokenResponse {
   refreshToken?: string;
   expireTime?: number;
   expiresTime?: number;
-  expireIn?: number;
+  expireIn?: number | string;
 }
 
 export class NeteaseOpenApiError extends BadGatewayException {
@@ -74,21 +75,29 @@ const QR_LIFETIME_MS = 300_000;
 @Injectable()
 export class NeteaseOpenApiClient {
   readonly appId: string;
-  readonly qrProvider: 'browser' | 'openapi';
+  readonly qrProvider: 'pc' | 'browser' | 'openapi';
+  private readonly redirectUrl: string;
+  private readonly clientType: string;
   private readonly appKey: string;
   private readonly privateKey: string;
   private signingKey?: KeyObject;
   private readonly anonymousContexts = new Map<string, Promise<OpenApiContext>>();
 
   constructor(config: ConfigService) {
-    const qrProvider = config.get<string>('NETEASE_QR_PROVIDER', 'browser').trim() || 'browser';
-    if (qrProvider !== 'browser' && qrProvider !== 'openapi') {
-      throw new Error('NETEASE_QR_PROVIDER 必须为 browser 或 openapi。');
+    const qrProvider = config.get<string>('NETEASE_QR_PROVIDER', 'pc').trim() || 'pc';
+    if (!['pc', 'browser', 'openapi'].includes(qrProvider)) {
+      throw new Error('NETEASE_QR_PROVIDER 必须为 pc、browser 或 openapi。');
     }
-    this.qrProvider = qrProvider;
+    this.qrProvider = qrProvider as 'pc' | 'browser' | 'openapi';
+    this.redirectUrl = config.get<string>('NETEASE_OPENAPI_REDIRECT_URL', '').trim();
+    this.clientType = config.get<string>('NETEASE_OPENAPI_CLIENT_TYPE', 'web').trim();
     this.appId = config.get<string>('NETEASE_OPENAPI_APP_ID', '').trim();
     this.appKey = config.get<string>('NETEASE_OPENAPI_APP_KEY', '').trim();
     this.privateKey = config.get<string>('NETEASE_OPENAPI_PRIVATE_KEY', '').trim();
+  }
+
+  get h5Configured(): boolean {
+    return Boolean(this.appId && this.privateKey && this.redirectUrl);
   }
 
   get enabled(): boolean {
@@ -142,6 +151,33 @@ export class NeteaseOpenApiClient {
     }
     if (url.protocol !== 'https:') throw new BadGatewayException('网易云返回的二维码链接无效。');
     return { key: data.uniKey, url: url.href, context, expiresAt: Date.now() + QR_LIFETIME_MS };
+  }
+
+  h5Authorization(state: string, subject: string) {
+    if (!this.appId || !this.privateKey) {
+      throw new BadGatewayException('请先配置网易云开放平台 App ID 和 RSA 私钥。');
+    }
+    let callback: URL;
+    try { callback = new URL(this.redirectUrl); } catch {
+      throw new BadGatewayException('请配置 NETEASE_OPENAPI_REDIRECT_URL，并在网易云开放平台登记相同的公网回调地址。');
+    }
+    if (callback.protocol !== 'https:' || callback.username || callback.password || callback.search || callback.hash ||
+        ['localhost', '127.0.0.1', '[::1]'].includes(callback.hostname)) {
+      throw new BadGatewayException('网易云 H5 回调地址必须是无查询参数的公网 HTTPS 地址。');
+    }
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(this.clientType)) {
+      throw new BadGatewayException('请配置与网易云应用一致的 NETEASE_OPENAPI_CLIENT_TYPE。');
+    }
+    const url = new URL('https://music.163.com/st/platform/oauth/authorize');
+    url.search = new URLSearchParams({ clientId: this.appId, state,
+      clientType: this.clientType, redirectUrl: callback.href }).toString();
+    return { url: url.href, context: { device: this.newDevice(subject), accessToken: '' } };
+  }
+
+  async exchangeCode(grantCode: string, context: OpenApiContext): Promise<OpenApiToken> {
+    const data = await this.request<TokenResponse>(NETEASE_OPENAPI.exchange,
+      { grantCode }, { device: context.device, accessToken: '' }, 'POST');
+    return this.token(data);
   }
 
   poll(key: string, context: OpenApiContext) {

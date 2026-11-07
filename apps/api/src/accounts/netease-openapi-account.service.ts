@@ -2,6 +2,7 @@ import {
   BadGatewayException, BadRequestException, Injectable, ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import QRCode from 'qrcode';
 import { Repository } from 'typeorm';
@@ -44,6 +45,8 @@ const encryptedId = (value: unknown): value is string =>
 
 @Injectable()
 export class NeteaseOpenApiAccountService {
+  private readonly oauth = new Map<string, { userId: string; context: OpenApiContext;
+    returnTo: string; expiresAt: number; timer: NodeJS.Timeout }>();
   private readonly pending = new Map<string, PendingQr>();
   private readonly starts = new Map<string, Promise<AccountQr>>();
   private readonly operations = new Map<string, Set<Promise<unknown>>>();
@@ -80,7 +83,74 @@ export class NeteaseOpenApiAccountService {
         nickname = typeof value.nickname === 'string' ? value.nickname : null;
       } catch { /* An unreadable credential is disconnected. */ }
     }
-    return { platform: 'netease', connected, nickname, connectedAt: row?.createdAt ?? null };
+    return { platform: 'netease', connected, nickname, connectedAt: row?.createdAt ?? null,
+      h5Available: this.client.h5Configured };
+  }
+
+  get qrProvider() { return this.client.qrProvider; }
+
+  startOAuth(userId: string, returnTo = '/app') {
+    this.assertActive(userId);
+    if (!/^\/app(?:\/playlists\/[a-f\d-]{36})?$/i.test(returnTo)) {
+      throw new BadRequestException('授权返回页面无效。');
+    }
+    for (const [key, entry] of this.oauth) {
+      if (entry.userId === userId || entry.expiresAt <= Date.now()) {
+        clearTimeout(entry.timer);
+        this.oauth.delete(key);
+      }
+    }
+    if (this.oauth.size >= 200) throw new ServiceUnavailableException('授权服务繁忙，请稍后重试。');
+    const state = randomBytes(15).toString('hex');
+    const authorization = this.client.h5Authorization(state, userId);
+    const expiresAt = Date.now() + 600_000;
+    const timer = setTimeout(() => this.oauth.delete(state), 600_000);
+    timer.unref();
+    this.oauth.set(state, { userId, context: authorization.context, returnTo, expiresAt, timer });
+    return { url: authorization.url };
+  }
+
+  completeOAuth(userId: string, state: string, code: string) {
+    return this.run(userId, async () => {
+      const entry = this.oauth.get(state);
+      if (!entry || entry.userId !== userId || entry.expiresAt <= Date.now()) {
+        throw new BadRequestException('网易云授权请求已过期或不属于当前用户，请重新发起。');
+      }
+      // Consume before the first await: callbacks and temporary codes are single-use.
+      this.oauth.delete(state);
+      clearTimeout(entry.timer);
+      let token: OpenApiToken;
+      try { token = await this.client.exchangeCode(code, entry.context); } catch (error) {
+        if (error instanceof NeteaseOpenApiError && error.upstreamCode === 300) {
+          throw new BadGatewayException('当前网易云应用未获准调用授权码换取令牌接口（300），请向网易云确认 H5 授权权限。');
+        }
+        if (error instanceof NeteaseOpenApiError && error.upstreamCode === 400) {
+          throw new BadGatewayException('网易云授权码无效或已过期，请重新发起授权。');
+        }
+        throw error;
+      }
+      this.assertActive(userId);
+      const session: OfficialSession = { ...token, device: entry.context.device,
+        kind: 'openapi', appId: this.client.appId, accountId: '', nickname: null };
+      const profile = await this.authorizedProfile(session);
+      if (!profile?.id) throw new BadGatewayException('网易云没有返回已授权的账号信息。');
+      this.assertActive(userId);
+      session.accountId = profile.id;
+      session.nickname = typeof profile.nickname === 'string' ? profile.nickname : null;
+      await this.saveSession(userId, session);
+      return { status: 'authorized' as const, nickname: session.nickname, returnTo: entry.returnTo };
+    });
+  }
+
+  private authorizedProfile(session: OfficialSession) {
+    return this.client.request<{ id?: string; nickname?: string }>(API.profile, {}, session)
+      .catch((error: unknown) => {
+        if (error instanceof NeteaseOpenApiError && error.upstreamCode === 301) {
+          throw new BadGatewayException({ code: 'NETEASE_PROFILE_FORBIDDEN',
+            message: '授权已成功，但网易云拒绝读取此账号资料（301：用户未授权当前接口）。请检查应用的账号及接口授权范围。' });
+        }
+        throw error;
+      });
   }
 
   startQr(userId: string): Promise<AccountQr> {
@@ -135,14 +205,7 @@ export class NeteaseOpenApiAccountService {
       const token = entry.authorizedToken;
       const session: OfficialSession = { ...token, device: entry.context.device,
         kind: 'openapi', appId: this.client.appId, accountId: '', nickname: null };
-      const profile = await this.client.request<{ id?: string; nickname?: string }>(API.profile, {}, session)
-        .catch((error: unknown) => {
-          if (error instanceof NeteaseOpenApiError && error.upstreamCode === 301) {
-            throw new BadGatewayException({ code: 'NETEASE_PROFILE_FORBIDDEN',
-              message: '扫码授权已成功，但网易云拒绝读取此账号资料（301：用户未授权当前接口）。请检查应用的账号及接口授权范围。' });
-          }
-          throw error;
-        });
+      const profile = await this.authorizedProfile(session);
       if (!profile?.id) throw new BadGatewayException('网易云没有返回已授权的账号信息。');
       if (entry.cancelled || this.disconnecting.has(userId)) return { status: 'expired' };
       session.accountId = profile.id;
@@ -176,6 +239,8 @@ export class NeteaseOpenApiAccountService {
   async onModuleDestroy(): Promise<void> {
     this.closed = true;
     for (const key of this.pending.keys()) this.remove(key);
+    for (const entry of this.oauth.values()) clearTimeout(entry.timer);
+    this.oauth.clear();
     await Promise.allSettled([...this.operations.values()].flatMap((set) => [...set]));
   }
 
@@ -424,6 +489,9 @@ export class NeteaseOpenApiAccountService {
   }
 
   private removeUserCodes(userId: string): void {
+    for (const [state, entry] of this.oauth) {
+      if (entry.userId === userId) { clearTimeout(entry.timer); this.oauth.delete(state); }
+    }
     for (const [key, entry] of this.pending) if (entry.userId === userId) this.remove(key);
   }
 }

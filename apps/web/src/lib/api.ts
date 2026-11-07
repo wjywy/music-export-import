@@ -148,6 +148,13 @@ export const api = {
     }),
   importJob: (id: string) => request<ImportJob>(`/imports/${id}`),
 
+  startNeteaseOAuth: (returnTo: string) => request<{ url: string }>('/accounts/netease/oauth/start', {
+    method: 'POST', body: JSON.stringify({ returnTo }),
+  }),
+  completeNeteaseOAuth: (state: string, code: string) =>
+    request<{ status: 'authorized'; nickname: string | null; returnTo: string }>('/accounts/netease/oauth/complete', {
+      method: 'POST', body: JSON.stringify({ state, code }),
+    }),
   accounts: () => request<{ accounts: AccountStatus[] }>('/accounts'),
   startAccountQr: (platform: AccountPlatform) =>
     request<AccountQr>(`/accounts/${platform}/qr`, {

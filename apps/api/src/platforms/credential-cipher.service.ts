@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 
 @Injectable()
 export class CredentialCipher {
@@ -12,6 +12,10 @@ export class CredentialCipher {
       config.get<string>('JWT_SECRET')?.trim() ||
       'dukou-development-secret';
     this.key = createHash('sha256').update(secret).digest();
+  }
+
+  stableId(scope: string): string {
+    return createHmac('sha256', this.key).update(scope).digest('hex');
   }
 
   encrypt(value: string): string {
